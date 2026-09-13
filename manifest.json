@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "hyc.hae-pulse",
+  "name": "HAE Pulse",
+  "version": "0.1.0",
+  "author": "hongyangchun",
+  "license": "MIT",
+  "description": "Health recovery pulse for the Omarchy bar: HRV vs 7-day baseline, today's exercise ring, and a weekly training panel. Read-only Health Auto Export cloud feed.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Main.qml"
+  },
+  "barWidget": {
+    "displayName": "HAE Pulse",
+    "description": "HRV recovery state and today's exercise minutes from your Health Auto Export feed.",
+    "category": "Health",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  },
+  "homepage": "https://github.com/hongyangchun"
+}
