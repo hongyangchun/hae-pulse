@@ -22,7 +22,7 @@ import sys
 import urllib.request
 import urllib.parse
 import ssl
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 BASE = "https://hae.qiaclass.com"
 UA = "hae-pulse/0.1"
@@ -80,15 +80,19 @@ def main():
 
     t = str(TODAY)
     hrv_today = hrv.get(t)
+    hrv_yesterday = next((v for d, v in sorted(hrv.items(), reverse=True) if d < t), None)
     hrv_base = mean([v for d, v in hrv.items() if d < t][-7:])   # prior 7 days
     rhr_today = rhr.get(t)
     rhr_base = mean([v for d, v in rhr.items() if d < t][-7:])
 
     out.update({
         "hrv_today": round(hrv_today, 1) if hrv_today is not None else None,
+        "hrv_yesterday": round(hrv_yesterday, 1) if hrv_yesterday is not None else None,
         "hrv_avg7": round(hrv_base, 1) if hrv_base else None,
         "hrv_delta_pct": (round((hrv_today - hrv_base) / hrv_base * 100, 1)
                           if hrv_today is not None and hrv_base else None),
+        "hrv_series": [{"day": d, "value": round(v, 1)}
+                       for d, v in sorted(hrv.items()) if d >= str(WEEK_AGO)],
         "rhr_today": round(rhr_today) if rhr_today is not None else None,
         "rhr_avg7": round(rhr_base, 1) if rhr_base else None,
         "exercise_min_today": round(ex.get(t, 0)),
@@ -96,6 +100,39 @@ def main():
         "steps_today": round(steps.get(t, 0)),
         "kcal_today": round(kcal.get(t, 0), 1),
     })
+
+    # --- sleep (points carry total/deep hours; date = wake morning) ----------
+    try:
+        pts = get("/api/query", {"name": "sleep_analysis",
+                                 "from": str(WEEK_AGO), "to": str(TODAY)}).get("points", [])
+        nights = [p for p in pts if (p.get("total", p.get("qty", 0)) or 0) >= 1.0]
+        nights.sort(key=lambda p: p["date"])
+        if nights:
+            n = nights[-1]
+            total, deep = n.get("total", 0) or 0, n.get("deep", 0) or 0
+            out["sleep"] = {
+                "day": n["date"],
+                "total_hr": round(total, 1),
+                "deep_hr": round(deep, 1),
+                "deep_pct": round(deep / total * 100) if total else None,
+            }
+    except Exception:
+        pass
+
+    # --- weight ---------------------------------------------------------------
+    try:
+        wt = series("weight_body_mass", str(TREND_START), str(TODAY))
+        if wt:
+            wd, wv = sorted(wt.items())[-1]
+            prior = [v for d, v in sorted(wt.items()) if d < wd][-7:]
+            base = mean(prior)
+            out["weight"] = {
+                "day": wd,
+                "kg": round(wv, 1),
+                "avg7": round(base, 1) if base else None,
+            }
+    except Exception:
+        pass
 
     # --- workouts ------------------------------------------------------------
     workouts = get("/api/workouts", {"from": str(WEEK_AGO), "to": str(TODAY)})
@@ -121,7 +158,7 @@ def main():
                       else "watch" if delta >= -15 else "rest")
 
     out["ok"] = True
-    out["fetched_at"] = TODAY.isoformat()
+    out["fetched_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
     print(json.dumps(out, ensure_ascii=False))
 
 

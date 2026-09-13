@@ -9,19 +9,25 @@ cloud API. The plugin never writes anything back.
 
 ## Bar widget
 
-- HRV number with a recovery verdict dot: **ready** (green, above baseline),
-  **ease off** (amber, watch), **recovery** (red, rest)
+- HRV number tinted by recovery verdict: **ready** (green, at/above
+  baseline), **ease off** (amber, watch), **recovery** (theme urgent, rest)
 - Verdict is computed by comparing today's HRV against the previous 7-day
   baseline
-- Tooltip shows HRV delta, exercise minutes, calories, steps, and last workout
+- Left click opens the panel; right click forces an immediate refresh
+- Tooltip shows HRV delta, exercise minutes, calories, steps, sleep, weight,
+  and the last workout
 - Data refreshes every 10 minutes; the collector is a short-lived process, so
   there is no resident background load
 
 ## Panel
 
-- HRV / resting HR today vs 7-day baseline
+- HRV 7-day trend sparkline (today's bar verdict-colored, dashed baseline)
+- HRV / resting HR today vs 7-day baseline (falls back to yesterday's HRV
+  until today's value syncs)
+- Sleep (total + deep) and weight (vs 7-day average)
 - Exercise minutes, calories, steps
 - 7-day workout table (name, duration, kcal, avg/max HR)
+- Footer shows data freshness ("updated 5m ago")
 
 ## Requirements
 

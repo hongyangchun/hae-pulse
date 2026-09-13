@@ -14,16 +14,20 @@ Panel {
   property bool loading: false
   property bool failed: false
   property string failMsg: ""
+  property real updatedAt: 0         // Date.now() of last successful sync
+  property int updatedTick: 0        // bumped while open to re-render "Xm ago"
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
-  readonly property color dim: Qt.darker(foreground, 1.5)
+  readonly property color barForeground: bar ? bar.barForeground : Color.foreground
+  readonly property color dim: Qt.darker(foreground, 1.4)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
-  // Recovery colors (theme-tinted fallbacks)
-  // "ready" green; no semantic color token exists in Color.qml
+  // Recovery colors: rest reuses the theme's urgent color so it follows the
+  // active Omarchy theme; ready/watch keep fixed hues (Color.qml has no
+  // semantic green/amber tokens).
   readonly property color cReady: "#8FF740"
-  readonly property color cWatch: "#d7a55b"   // amber
-  readonly property color cRest:  "#EC081F"   // red
+  readonly property color cWatch: "#d7a55b"
+  readonly property color cRest: Color.urgent
 
   readonly property color verdictColor: {
     if (!snap || !snap.ok) return dim
@@ -33,9 +37,25 @@ Panel {
   }
   readonly property string verdictLabel: {
     if (!snap || !snap.ok) return "OFFLINE"
+    if (loading) return "SYNCING"
     if (snap.verdict === "ready") return "READY"
     if (snap.verdict === "watch") return "EASE OFF"
     return "RECOVERY"
+  }
+
+  function fmtHours(h) {
+    var hh = Math.floor(h)
+    var mm = Math.round((h - hh) * 60)
+    if (mm === 60) { hh += 1; mm = 0 }
+    return hh + "h" + (mm < 10 ? "0" : "") + mm + "m"
+  }
+
+  function agoText() {
+    if (!root.updatedAt) return ""
+    var s = Math.max(0, Math.floor((Date.now() - root.updatedAt) / 1000))
+    if (s < 60) return "updated just now"
+    if (s < 3600) return "updated " + Math.floor(s / 60) + "m ago"
+    return "updated " + Math.floor(s / 3600) + "h ago"
   }
 
   // ---- data refresh ---------------------------------------------------------
@@ -63,10 +83,16 @@ Panel {
     onTriggered: { root.failed = false; root.refresh() }
   }
 
-  Component.onCompleted: refresh()
+  Timer {
+    interval: 30000                      // keep "updated Xm ago" fresh while open
+    running: root.opened
+    repeat: true
+    onTriggered: root.updatedTick++
+  }
 
   // Panel root exposes `opened`; KeyboardPanel child only has `open`.
   onOpenedChanged: if (opened) root.refresh()
+  Component.onCompleted: refresh()
 
   Process {
     id: proc
@@ -75,8 +101,12 @@ Panel {
         root.loading = false
         try {
           var j = JSON.parse(this.text)
-          if (j.ok) { root.snap = j; root.failed = false }
-          else { root.failed = true; root.failMsg = j.error || "unknown" }
+          if (j.ok) {
+            root.snap = j
+            root.failed = false
+            root.updatedAt = Date.now()
+            root.updatedTick++
+          } else { root.failed = true; root.failMsg = j.error || "unknown" }
         } catch (e) {
           root.failed = true; root.failMsg = String(e).slice(0, 80)
         }
@@ -96,37 +126,38 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
+    // HRV number tinted by recovery verdict; falls back to the bar's own
+    // foreground while offline.
+    foreground: root.snap && root.snap.ok ? root.verdictColor : root.barForeground
     text: {
       if (!root.snap || !root.snap.ok) return "●"
       var h = root.snap.hrv_today
       return h != null ? String(Math.round(h)) : "●"
     }
     tooltipText: {
-      if (root.loading) return "HAE Pulse · syncing…"
+      if (root.loading && !root.snap) return "HAE Pulse · syncing…"
       if (!root.snap || !root.snap.ok) return "HAE Pulse · " + (root.failMsg || "no data")
       var s = root.snap
-      var line = "HRV " + s.hrv_today + " (" + (s.hrv_delta_pct >= 0 ? "+" : "") + s.hrv_delta_pct + "% vs base) · " + root.verdictLabel
-      line += "\nExercise " + s.exercise_min_today + "/" + s.exercise_goal + " min · " + s.kcal_today + " kcal · " + s.steps_today + " steps"
+      var lines = []
+      if (s.hrv_today != null)
+        lines.push("HRV " + s.hrv_today + " ms (" + (s.hrv_delta_pct >= 0 ? "+" : "") + s.hrv_delta_pct + "% vs base) · " + root.verdictLabel)
+      else
+        lines.push("HRV awaiting sync · yesterday " + (s.hrv_yesterday != null ? s.hrv_yesterday + " ms" : "—"))
+      lines.push("Exercise " + s.exercise_min_today + "/" + s.exercise_goal + " min · " + s.kcal_today + " kcal · " + s.steps_today + " steps")
+      if (s.sleep)
+        lines.push("Sleep " + root.fmtHours(s.sleep.total_hr) + " · deep " + (s.sleep.deep_pct != null ? s.sleep.deep_pct + "%" : root.fmtHours(s.sleep.deep_hr)))
+      if (s.weight)
+        lines.push("Weight " + s.weight.kg + " kg" + (s.weight.avg7 != null ? " · 7d avg " + s.weight.avg7 + " kg" : ""))
       if (s.workouts_7d && s.workouts_7d.length) {
         var w = s.workouts_7d[0]
-        line += "\nLast: " + w.day.slice(5) + " " + w.name + " " + w.min + "min " + w.kcal + "kcal"
+        lines.push("Last: " + w.day.slice(5) + " " + w.name + " " + w.min + "min " + w.kcal + "kcal")
       }
-      return line
+      return lines.join("\n")
     }
-    // Dot colors with the verdict; text stays theme foreground
-    onPressed: function(mouseButton) { root.toggle() }
-  }
-
-  // tiny colored verdict dot in the slot's top-right corner
-  Rectangle {
-    width: 6; height: 6; radius: 3
-    color: root.verdictColor
-    anchors.top: parent.top
-    anchors.topMargin: 5
-    anchors.right: parent.right
-    anchors.rightMargin: 3
-    visible: root.snap && root.snap.ok
-    z: 10
+    onPressed: function(mouseButton) {
+      if (mouseButton === Qt.RightButton) root.refresh()
+      else root.toggle()
+    }
   }
 
   // ---- popout panel -----------------------------------------------------------
@@ -137,65 +168,144 @@ Panel {
     bar: root.bar
     open: root.opened
     contentWidth: panel.fittedContentWidth(Style.space(420))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(640))
 
     Column {
       id: column
       width: parent.width
       spacing: Style.space(12)
 
-      // header
-      Item {
+      PanelHero {
         width: parent.width
-        height: Style.space(44)
-        Text {
-          text: "HAE PULSE"
-          color: root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.title
-          font.bold: true
+        title: "HAE PULSE"
+        detail: root.verdictLabel
+        meta: {
+          if (!root.snap || !root.snap.ok) return "waiting for data"
+          if (root.snap.hrv_delta_pct == null) return "no baseline yet"
+          var d = root.snap.hrv_delta_pct
+          return (d >= 0 ? "+" : "") + d + "% vs 7d baseline"
         }
-        Text {
-          anchors.right: parent.right
-          anchors.bottom: parent.bottom
-          text: root.verdictLabel
-          color: root.verdictColor
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          font.bold: true
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        iconComponent: Component {
+          Text {
+            text: "♥"
+            color: root.verdictColor
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.display
+          }
         }
       }
 
-      // HRV / RHR rows
+      // HRV 7-day trend: today is the last bar (verdict-colored), dashed line
+      // is the 7-day baseline.
+      Canvas {
+        id: spark
+        width: parent.width
+        height: Style.space(64)
+        visible: root.snap && root.snap.ok && root.snap.hrv_series && root.snap.hrv_series.length > 1
+        onPaint: {
+          var ctx = getContext("2d")
+          ctx.clearRect(0, 0, width, height)
+          var s = root.snap.hrv_series
+          var vals = []
+          for (var i = 0; i < s.length; i++)
+            if (s[i].value != null) vals.push(s[i].value)
+          if (vals.length < 2) return
+          var lo = Math.min.apply(null, vals)
+          var hi = Math.max.apply(null, vals)
+          if (hi - lo < 1) hi = lo + 1
+          var pad = 6
+          var slot = width / s.length
+          var bw = Math.min(20, slot * 0.45)
+          function y(v) { return height - (pad + (v - lo) / (hi - lo) * (height - 2 * pad)) }
+          if (root.snap.hrv_avg7) {
+            ctx.globalAlpha = 0.45
+            ctx.strokeStyle = String(root.dim)
+            ctx.setLineDash([3, 3])
+            ctx.beginPath()
+            ctx.moveTo(0, y(root.snap.hrv_avg7))
+            ctx.lineTo(width, y(root.snap.hrv_avg7))
+            ctx.stroke()
+            ctx.setLineDash([])
+            ctx.globalAlpha = 1
+          }
+          for (var j = 0; j < s.length; j++) {
+            var v = s[j].value
+            if (v == null) continue
+            var isToday = j === s.length - 1
+            ctx.fillStyle = String(isToday ? root.verdictColor : root.dim)
+            ctx.globalAlpha = isToday ? 1 : 0.55
+            ctx.fillRect(j * slot + (slot - bw) / 2, y(v), bw, height - y(v))
+          }
+          ctx.globalAlpha = 1
+        }
+        Connections {
+          target: root
+          function onSnapChanged() { spark.requestPaint() }
+        }
+      }
+
+      // vitals rows
       Repeater {
         model: {
           if (!root.snap || !root.snap.ok) return []
           var s = root.snap
-          return [
-            {label: "HRV today", value: s.hrv_today != null ? s.hrv_today + " ms" : "—",
-             base: s.hrv_avg7 != null ? "7d base " + s.hrv_avg7 + " ms" : "", tint: root.verdictColor},
-            {label: "Resting HR", value: s.rhr_today != null ? s.rhr_today + " bpm" : "—",
-             base: s.rhr_avg7 != null ? "7d base " + s.rhr_avg7 + " bpm" : "", tint: root.foreground},
-            {label: "Exercise", value: s.exercise_min_today + " / " + s.exercise_goal + " min",
-             base: s.kcal_today + " kcal · " + s.steps_today + " steps", tint: root.foreground}
-          ]
+          var rows = []
+          rows.push({
+            label: "HRV today",
+            value: s.hrv_today != null ? s.hrv_today + " ms" : "—",
+            base: s.hrv_today != null
+                    ? (s.hrv_avg7 != null ? "7d base " + s.hrv_avg7 + " ms" : "")
+                    : ("yesterday " + (s.hrv_yesterday != null ? s.hrv_yesterday + " ms" : "—")),
+            tint: root.verdictColor
+          })
+          rows.push({
+            label: "Resting HR",
+            value: s.rhr_today != null ? s.rhr_today + " bpm" : "—",
+            base: s.rhr_avg7 != null ? "7d base " + s.rhr_avg7 + " bpm" : "",
+            tint: root.foreground
+          })
+          if (s.sleep)
+            rows.push({
+              label: "Sleep",
+              value: root.fmtHours(s.sleep.total_hr),
+              base: "deep " + root.fmtHours(s.sleep.deep_hr) + (s.sleep.deep_pct != null ? " · " + s.sleep.deep_pct + "%" : ""),
+              tint: root.foreground
+            })
+          if (s.weight)
+            rows.push({
+              label: "Weight",
+              value: s.weight.kg + " kg",
+              base: (s.weight.avg7 != null ? "7d avg " + s.weight.avg7 + " kg" : "") +
+                    (s.weight.day && s.fetched_at && s.weight.day !== s.fetched_at.slice(0, 10) ? " · " + s.weight.day.slice(5) : ""),
+              tint: root.foreground
+            })
+          rows.push({
+            label: "Exercise",
+            value: s.exercise_min_today + " / " + s.exercise_goal + " min",
+            base: s.kcal_today + " kcal · " + s.steps_today + " steps",
+            tint: root.foreground
+          })
+          return rows
         }
         delegate: Row {
           width: parent.width
           spacing: Style.space(8)
-          // 3 cells + 2 gaps must equal row width
-          readonly property real cell: (width - 2 * spacing) / 3
-          Text { width: parent.cell; text: modelData.label; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body; elide: Text.ElideRight }
-          Text { width: parent.cell; text: modelData.value; color: modelData.tint; font.family: root.fontFamily; font.pixelSize: Style.font.body; font.bold: true; elide: Text.ElideRight }
-          Text { width: parent.cell; text: modelData.base; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight; horizontalAlignment: Text.AlignRight }
+          Text { width: Style.space(106); text: modelData.label; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body; elide: Text.ElideRight }
+          Text { width: Style.space(112); text: modelData.value; color: modelData.tint; font.family: root.fontFamily; font.pixelSize: Style.font.body; font.bold: true; elide: Text.ElideRight }
+          Text { width: parent.width - Style.space(234); text: modelData.base; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight; horizontalAlignment: Text.AlignRight }
         }
       }
 
-      // divider
-      Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.08) }
+      PanelSeparator { width: parent.width; foreground: root.foreground }
 
-      // 7-day workouts
-      Text { text: "TRAINING · 7 DAYS"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+      PanelSectionHeader {
+        width: parent.width
+        text: "TRAINING · 7 DAYS"
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+      }
 
       Repeater {
         model: (root.snap && root.snap.ok && root.snap.workouts_7d) ? root.snap.workouts_7d : []
@@ -213,14 +323,22 @@ Panel {
       }
 
       Text {
-        visible: !root.snap || !root.snap.ok
         width: parent.width
-        text: root.failed ? ("Sync failed: " + root.failMsg + " · retrying…") : "Loading…"
+        visible: root.failed || root.updatedLabel !== ""
+        text: root.failed
+                ? ("Sync failed: " + root.failMsg + " · retrying…")
+                : (root.loading ? root.updatedLabel + " · syncing…" : root.updatedLabel)
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         elide: Text.ElideRight
       }
     }
+  }
+
+  // re-evaluated by updatedTick so the footer age stays honest
+  readonly property string updatedLabel: {
+    root.updatedTick
+    return root.agoText()
   }
 }
