@@ -202,12 +202,13 @@ Panel {
         delegate: Row {
           width: parent.width
           spacing: Style.space(8)
-          // 4 cells + 3 gaps must equal row width
-          readonly property real avail: width - 3 * spacing
-          Text { width: parent.avail * 0.14; text: modelData.day.slice(5); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
-          Text { width: parent.avail * 0.40; text: modelData.name; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
-          Text { width: parent.avail * 0.20; text: modelData.min + "min"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
-          Text { width: parent.avail * 0.26; text: modelData.kcal + "kcal · " + modelData.avg_hr + "/" + modelData.max_hr; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight; horizontalAlignment: Text.AlignRight }
+          // fixed columns + 4 gaps; name gets whatever is left (elided)
+          readonly property real fixedCells: Style.space(46 + 52 + 66 + 78) + 4 * spacing
+          Text { width: Style.space(46); text: modelData.day.slice(5); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+          Text { width: parent.width - parent.fixedCells; text: modelData.name; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+          Text { width: Style.space(52); text: modelData.min + "min"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+          Text { width: Style.space(66); text: modelData.kcal + "kcal"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+          Text { width: Style.space(78); text: Math.round(modelData.avg_hr) + "/" + Math.round(modelData.max_hr); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight; horizontalAlignment: Text.AlignRight }
         }
       }
 
