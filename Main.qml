@@ -137,11 +137,11 @@ Panel {
     bar: root.bar
     open: root.opened
     contentWidth: panel.fittedContentWidth(Style.space(420))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight)
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
 
     Column {
       id: column
-      anchors.fill: parent
+      width: parent.width
       spacing: Style.space(12)
 
       // header
@@ -183,9 +183,11 @@ Panel {
         delegate: Row {
           width: parent.width
           spacing: Style.space(8)
-          Text { width: parent.width * 0.32; text: modelData.label; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body }
-          Text { width: parent.width * 0.30; text: modelData.value; color: modelData.tint; font.family: root.fontFamily; font.pixelSize: Style.font.body; font.bold: true }
-          Text { width: parent.width * 0.38; text: modelData.base; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; horizontalAlignment: Text.AlignRight }
+          // 3 cells + 2 gaps must equal row width
+          readonly property real cell: (width - 2 * spacing) / 3
+          Text { width: parent.cell; text: modelData.label; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body; elide: Text.ElideRight }
+          Text { width: parent.cell; text: modelData.value; color: modelData.tint; font.family: root.fontFamily; font.pixelSize: Style.font.body; font.bold: true; elide: Text.ElideRight }
+          Text { width: parent.cell; text: modelData.base; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight; horizontalAlignment: Text.AlignRight }
         }
       }
 
@@ -200,10 +202,12 @@ Panel {
         delegate: Row {
           width: parent.width
           spacing: Style.space(8)
-          Text { width: parent.width * 0.14; text: modelData.day.slice(5); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-          Text { width: parent.width * 0.40; text: modelData.name; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
-          Text { width: parent.width * 0.20; text: modelData.min + "min"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-          Text { width: parent.width * 0.26; text: modelData.kcal + "kcal · " + modelData.avg_hr + "/" + modelData.max_hr; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; horizontalAlignment: Text.AlignRight }
+          // 4 cells + 3 gaps must equal row width
+          readonly property real avail: width - 3 * spacing
+          Text { width: parent.avail * 0.14; text: modelData.day.slice(5); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+          Text { width: parent.avail * 0.40; text: modelData.name; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+          Text { width: parent.avail * 0.20; text: modelData.min + "min"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+          Text { width: parent.avail * 0.26; text: modelData.kcal + "kcal · " + modelData.avg_hr + "/" + modelData.max_hr; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight; horizontalAlignment: Text.AlignRight }
         }
       }
 
@@ -214,6 +218,7 @@ Panel {
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
+        elide: Text.ElideRight
       }
     }
   }
