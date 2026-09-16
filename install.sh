@@ -17,11 +17,16 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ID="hyc.hae-pulse"
 TARGET="${1:-}"
 
+# Backups must live outside any directory the host scans for plugins. Omarchy
+# loads every entry under plugins/, so a `<name>.bak.<ts>` directory left there
+# is picked up as a second plugin with the same manifest id.
+BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/hae-pulse/backups"
+
 info() { printf '  %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 link() {
-  # link <source> <destination> — atomic-ish symlink swap with backup
+  # link <source> <destination> — symlink swap, never touching the host dir
   local source="$1" dest="$2"
   if [ -L "$dest" ]; then
     if [ "$(readlink "$dest")" = "$source" ]; then
@@ -31,7 +36,8 @@ link() {
     info "relinking $dest (was -> $(readlink "$dest"))"
     rm "$dest"
   elif [ -e "$dest" ]; then
-    local bak="$dest.bak.$(date +%Y%m%d%H%M%S)"
+    mkdir -p "$BACKUP_ROOT"
+    local bak="$BACKUP_ROOT/$(basename "$dest").$(date +%Y%m%d%H%M%S)"
     info "real directory in the way, backing up -> $bak"
     mv "$dest" "$bak"
   fi
@@ -49,6 +55,16 @@ install_omarchy() {
 
   mkdir -p "$plugins"
   link "$src" "$plugins/$PLUGIN_ID"
+
+  # An older revision of this script put backups next to the plugin, where the
+  # host happily loads them as a second plugin sharing one manifest id.
+  local stale
+  stale="$(find "$plugins" -maxdepth 1 -name "$PLUGIN_ID.bak.*" 2>/dev/null || true)"
+  if [ -n "$stale" ]; then
+    info "WARNING: stale backup(s) inside the plugin directory:"
+    printf '    %s\n' $stale
+    info "move them out — e.g.  mv <path> $BACKUP_ROOT/"
+  fi
 
   # Prove the shared data layer resolves from the installed location, not just
   # from inside the repo — a wrong-depth symlink still looks fine in git.
