@@ -163,6 +163,17 @@ function render() {
     d.rhr_avg7 === null || d.rhr_avg7 === undefined ? '' : '7d base ' + d.rhr_avg7 + ' bpm',
     'var(--fg)']);
 
+  if (d.vo2max) {
+    const vo = d.vo2max;
+    let base = vo.avg7 === null || vo.avg7 === undefined ? '' : '7d base ' + vo.avg7;
+    if (vo.hrmax_ref !== null && vo.hrmax_ref !== undefined) {
+      base += (base ? ' \u00b7 ' : '') + 'HRmax ' + vo.hrmax_ref;
+    }
+    rows.push(['VO2max est',
+      vo.est === null || vo.est === undefined ? '\u2014' : vo.est + ' ml/kg',
+      base, 'var(--fg)']);
+  }
+
   if (d.sleep) {
     let deep = 'deep ' + fmtHours(d.sleep.deep_hr);
     if (d.sleep.deep_pct !== null && d.sleep.deep_pct !== undefined) deep += ' \u00b7 ' + d.sleep.deep_pct + '%';

@@ -148,6 +148,8 @@ Panel {
         lines.push("Sleep " + root.fmtHours(s.sleep.total_hr) + " · deep " + (s.sleep.deep_pct != null ? s.sleep.deep_pct + "%" : root.fmtHours(s.sleep.deep_hr)))
       if (s.weight)
         lines.push("Weight " + s.weight.kg + " kg" + (s.weight.avg7 != null ? " · 7d avg " + s.weight.avg7 + " kg" : ""))
+      if (s.vo2max)
+        lines.push("VO2max " + s.vo2max.est + " ml/kg (est)" + (s.vo2max.avg7 != null ? " · 7d base " + s.vo2max.avg7 : ""))
       if (s.workouts_7d && s.workouts_7d.length) {
         var w = s.workouts_7d[0]
         lines.push("Last: " + w.day.slice(5) + " " + w.name + " " + w.min + "min " + w.kcal + "kcal")
@@ -279,6 +281,17 @@ Panel {
               value: s.weight.kg + " kg",
               base: (s.weight.avg7 != null ? "7d avg " + s.weight.avg7 + " kg" : "") +
                     (s.weight.day && s.fetched_at && s.weight.day !== s.fetched_at.slice(0, 10) ? " · " + s.weight.day.slice(5) : ""),
+              tint: root.foreground
+            })
+          // VO2max is an estimate (Uth formula, from resting HR) — Apple only
+          // measures Cardio Fitness during outdoor walk/run, which this account
+          // never logs. Hence the "est" suffix.
+          if (s.vo2max)
+            rows.push({
+              label: "VO2max est",
+              value: s.vo2max.est != null ? s.vo2max.est + " ml/kg" : "—",
+              base: (s.vo2max.avg7 != null ? "7d base " + s.vo2max.avg7 : "") +
+                    (s.vo2max.hrmax_ref != null ? (s.vo2max.avg7 != null ? " · " : "") + "HRmax " + s.vo2max.hrmax_ref : ""),
               tint: root.foreground
             })
           rows.push({

@@ -6,6 +6,7 @@ Output: single JSON line on stdout
   "ok": true,
   "hrv_today": 36.7, "hrv_avg7": 34.1, "hrv_delta_pct": 7.6,
   "rhr_today": 55,   "rhr_avg7": 59.3,
+  "vo2max": {"day": "2026-09-16", "est": 47.5, "rhr7": 55.6, "avg7": 47.3, "hrmax_ref": 176},
   "exercise_min_today": 4, "exercise_goal": 30,
   "steps_today": 3573,
   "kcal_today": 295.9,
@@ -130,6 +131,31 @@ def main():
                 "day": wd,
                 "kg": round(wv, 1),
                 "avg7": round(base, 1) if base else None,
+            }
+    except Exception:
+        pass
+
+    # --- VO2max estimate ------------------------------------------------------
+    # Apple Watch only estimates Cardio Fitness during outdoor walk/run with GPS,
+    # so vo2_max is permanently empty for this account (verified: zero rows in
+    # the API). Read the server-side fallback instead — Uth formula,
+    # 15 x HRmax / HRrest, computed in hae-api's worker.js so the dashboard and
+    # this plugin share one implementation. Estimate only (~±10-15% per person):
+    # trust the trend, not the absolute number.
+    try:
+        est = get("/api/query", {"name": "vo2_max_est",
+                                 "from": str(TREND_START), "to": str(TODAY)})
+        byday = {p["date"]: p for p in est.get("points", []) if p.get("qty") is not None}
+        if byday:
+            day = str(TODAY) if str(TODAY) in byday else max(byday)
+            cur = byday[day]
+            prior = [byday[d]["qty"] for d in sorted(byday) if d < day][-7:]
+            out["vo2max"] = {
+                "day": day,
+                "est": round(cur["qty"], 1),
+                "rhr7": cur.get("rhr7"),
+                "avg7": round(mean(prior), 1) if prior else None,
+                "hrmax_ref": est.get("hrmax_ref"),
             }
     except Exception:
         pass

@@ -310,6 +310,19 @@ def menu(data):
         pad("Resting HR", 14), pad("%s bpm" % rhr_today if rhr_today is not None else "—", 11),
         pad("7d base %s bpm" % rhr_base if rhr_base is not None else "", 18), C_FG))
 
+    # VO2max 估算值。放在下拉里而不是菜单栏：它按公式是静息心率的单调变换，
+    # 和上面那行 Resting HR 高度共线，占菜单栏不划算；但作为一个「心脏能力」的
+    # 绝对数字量级，看趋势时有意义。标 est 以区别于 Apple 的实测值。
+    vo = data.get("vo2max")
+    if vo:
+        right = "7d base %s" % vo["avg7"] if vo.get("avg7") is not None else ""
+        if vo.get("hrmax_ref") is not None:
+            right = (right + " · " if right else "") + "HRmax %s" % vo["hrmax_ref"]
+        out.append("%s%s%s | color=%s font=Menlo size=12" % (
+            pad("VO2max est", 14),
+            pad("%s ml/kg" % vo["est"] if vo.get("est") is not None else "—", 11),
+            pad(right, 18), C_FG))
+
     sleep = data.get("sleep")
     if sleep:
         deep = "deep %s" % fmt_hours(sleep.get("deep_hr"))
