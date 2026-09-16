@@ -4,6 +4,8 @@
 两端共用同一份数据层，只有渲染是各写各的。
 
 数据来自自建的 HAE 服务（`hae.qiaclass.com`）——只读，不回写任何健康数据。
+服务端代码与接口契约见 [**hae-api**](https://github.com/hongyangchun/hae-api)，
+同一服务还托管网页版仪表盘 `/dashboard`。
 
 ## 两个前端
 

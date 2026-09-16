@@ -5,7 +5,8 @@
 
 菜单栏常驻今天的 HRV，按恢复状态着色；点开是 sparkline、生命体征和 7 天训练记录。
 
-数据只读，不回写 Health Auto Export。
+数据只读，不回写 Health Auto Export。服务端代码、接口契约与网页版仪表盘
+见 [**hae-api**](https://github.com/hongyangchun/hae-api)。
 
 ## 它长什么样
 

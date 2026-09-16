@@ -2,7 +2,7 @@
 # <xbar.title>HAE Pulse</xbar.title>
 # <xbar.version>0.1.0</xbar.version>
 # <xbar.author>hongyangchun</xbar.author>
-# <xbar.desc>Health recovery pulse: HRV vs 7-day baseline with recovery verdict, sleep, weight, exercise and a 7-day training log, read from the Health Auto Export cloud feed. macOS port of omarchy-hae-pulse.</xbar.desc>
+# <xbar.desc>Health recovery pulse: HRV vs 7-day baseline with recovery verdict, sleep, weight, exercise and a 7-day training log, read from the Health Auto Export cloud feed. macOS port of the hae-pulse Omarchy widget.</xbar.desc>
 # <xbar.dependencies>python3</xbar.dependencies>
 # <xbar.abouturl>https://github.com/hongyangchun/hae-pulse</xbar.abouturl>
 #
