@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>HAE Pulse</title>
+<style>
+  :root {
+    --bg: #1c1c1e;
+    --fg: #e8e8ea;
+    --dim: #8a8a8e;
+    --line: rgba(255,255,255,.07);
+    --ready: #8ff740;
+    --watch: #d7a55b;
+    --rest: #ff5c57;
+    --mono: "SF Mono", "Menlo", ui-monospace, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  .panel { padding: 16px 18px 18px; }
+
+  .hero { display: flex; align-items: center; gap: 12px; padding-bottom: 14px; }
+  .heart { font-size: 26px; line-height: 1; color: var(--verdict); }
+  .hero h1 { font-size: 15px; font-weight: 500; letter-spacing: .08em; }
+  .hero .meta { color: var(--dim); font-size: 11px; margin-top: 3px; }
+  .hero .meta b { color: var(--verdict); font-weight: 500; }
+
+  .stale {
+    background: rgba(215,165,91,.12);
+    border: 1px solid rgba(215,165,91,.3);
+    color: var(--watch);
+    font-size: 11px;
+    padding: 6px 9px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+  }
+
+  canvas { display: block; width: 100%; height: 64px; margin-bottom: 4px; }
+
+  .rows { margin: 10px 0 0; }
+  .row { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; }
+  .row .label { width: 106px; color: var(--dim); flex: none; }
+  .row .value { width: 104px; font-weight: 500; flex: none; }
+  .row .base { flex: 1; text-align: right; color: var(--dim); font-size: 11px; }
+
+  hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0 12px; }
+
+  .section { color: var(--dim); font-size: 11px; letter-spacing: .1em; margin-bottom: 8px; }
+
+  .work { display: grid; grid-template-columns: 40px 1fr 52px 62px 72px; gap: 8px; padding: 2.5px 0; font-size: 11px; }
+  .work .day { color: var(--dim); }
+  .work .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .work .hr { color: var(--dim); text-align: right; }
+  .work .min, .work .kcal { color: var(--fg); }
+
+  .empty { color: var(--dim); font-size: 11px; }
+
+  footer { margin-top: 14px; color: var(--dim); font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="panel">
+  <div id="stale"></div>
+
+  <div class="hero">
+    <div class="heart">&#9829;</div>
+    <div>
+      <h1>HAE PULSE</h1>
+      <div class="meta" id="meta"></div>
+    </div>
+  </div>
+
+  <canvas id="spark"></canvas>
+
+  <div class="rows" id="rows"></div>
+
+  <hr>
+  <div class="section">TRAINING &middot; 7 DAYS</div>
+  <div id="work"></div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const DATA = /*__HAE_DATA__*/null;
+
+const VERDICT = {
+  ready: { color: 'var(--ready)', label: 'READY' },
+  watch: { color: 'var(--watch)', label: 'EASE OFF' },
+  rest:  { color: 'var(--rest)',  label: 'RECOVERY' }
+};
+
+function fmtHours(h) {
+  if (h === null || h === undefined) return '\u2014';
+  let hh = Math.floor(h);
+  let mm = Math.round((h - hh) * 60);
+  if (mm === 60) { hh += 1; mm = 0; }
+  return hh + 'h' + (mm < 10 ? '0' : '') + mm + 'm';
+}
+
+function ago(iso) {
+  if (!iso) return '';
+  const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (secs < 90) return 'updated just now';
+  if (secs < 3600) return 'updated ' + Math.floor(secs / 60) + 'm ago';
+  if (secs < 86400) return 'updated ' + Math.floor(secs / 3600) + 'h ago';
+  return 'updated ' + Math.floor(secs / 86400) + 'd ago';
+}
+
+function esc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function put(html) { return html; }
+
+function render() {
+  const d = DATA;
+  document.body.style.margin = '0';
+
+  if (!d || !d.ok) {
+    document.documentElement.style.setProperty('--verdict', 'var(--rest)');
+    document.getElementById('meta').textContent = 'offline';
+    document.getElementById('rows').innerHTML =
+      '<div class="empty">' + esc((d && d.error) || 'no data') + '</div>';
+    document.getElementById('spark').style.display = 'none';
+    document.getElementById('work').innerHTML = '';
+    document.getElementById('foot').textContent = '';
+    return;
+  }
+
+  const v = VERDICT[d.verdict] || VERDICT.ready;
+  document.documentElement.style.setProperty('--verdict', v.color);
+
+  if (d.stale) {
+    document.getElementById('stale').innerHTML =
+      '<div class="stale">showing cached data \u2014 ' + esc(d.stale_error || 'sync failed') + '</div>';
+  }
+
+  const delta = d.hrv_delta_pct;
+  document.getElementById('meta').innerHTML = v.label + ' \u00b7 ' + (delta === null || delta === undefined
+    ? 'no baseline yet'
+    : '<b>' + (delta >= 0 ? '+' : '') + delta + '%</b> vs 7d baseline');
+
+  drawSpark(d);
+
+  const rows = [];
+  const hrvToday = d.hrv_today === null || d.hrv_today === undefined ? '\u2014' : d.hrv_today + ' ms';
+  const hrvBase = d.hrv_today === null || d.hrv_today === undefined
+    ? 'yesterday ' + (d.hrv_yesterday === null || d.hrv_yesterday === undefined ? '\u2014' : d.hrv_yesterday + ' ms')
+    : (d.hrv_avg7 === null || d.hrv_avg7 === undefined ? '' : '7d base ' + d.hrv_avg7 + ' ms');
+  rows.push(['HRV today', hrvToday, hrvBase, v.color]);
+
+  rows.push(['Resting HR',
+    d.rhr_today === null || d.rhr_today === undefined ? '\u2014' : d.rhr_today + ' bpm',
+    d.rhr_avg7 === null || d.rhr_avg7 === undefined ? '' : '7d base ' + d.rhr_avg7 + ' bpm',
+    'var(--fg)']);
+
+  if (d.sleep) {
+    let deep = 'deep ' + fmtHours(d.sleep.deep_hr);
+    if (d.sleep.deep_pct !== null && d.sleep.deep_pct !== undefined) deep += ' \u00b7 ' + d.sleep.deep_pct + '%';
+    rows.push(['Sleep', fmtHours(d.sleep.total_hr), deep, 'var(--fg)']);
+  }
+
+  if (d.weight) {
+    const ag = d.weight.avg7 === null || d.weight.avg7 === undefined ? '' : '7d avg ' + d.weight.avg7 + ' kg';
+    const staleDay = d.weight.day && d.fetched_at && d.weight.day !== d.fetched_at.slice(0, 10)
+      ? ' \u00b7 ' + d.weight.day.slice(5) : '';
+    rows.push(['Weight', d.weight.kg + ' kg', ag + staleDay, 'var(--fg)']);
+  }
+
+  rows.push(['Exercise',
+    d.exercise_min_today + ' / ' + d.exercise_goal + ' min',
+    d.kcal_today + ' kcal \u00b7 ' + d.steps_today + ' steps', 'var(--fg)']);
+
+  document.getElementById('rows').innerHTML = rows.map(r =>
+    '<div class="row"><span class="label">' + esc(r[0]) + '</span>' +
+    '<span class="value" style="color:' + r[3] + '">' + esc(r[1]) + '</span>' +
+    '<span class="base">' + esc(r[2]) + '</span></div>').join('');
+
+  const w = d.workouts_7d || [];
+  document.getElementById('work').innerHTML = w.length ? w.map(x =>
+    '<div class="work"><span class="day">' + esc(String(x.day).slice(5)) + '</span>' +
+    '<span class="name">' + esc(x.name) + '</span>' +
+    '<span class="min">' + x.min + 'min</span>' +
+    '<span class="kcal">' + x.kcal + 'kcal</span>' +
+    '<span class="hr">' + (x.avg_hr ? Math.round(x.avg_hr) : '\u2014') + '/' +
+      (x.max_hr ? Math.round(x.max_hr) : '\u2014') + '</span></div>').join('')
+    : '<div class="empty">no workouts logged</div>';
+
+  document.getElementById('foot').textContent = ago(d.fetched_at);
+}
+
+function drawSpark(d) {
+  const canvas = document.getElementById('spark');
+  const series = d.hrv_series || [];
+  const vals = series.filter(p => p.value !== null && p.value !== undefined).map(p => p.value);
+  if (vals.length < 2) { canvas.style.display = 'none'; return; }
+
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 400;
+  const h = 64;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  let lo = Math.min.apply(null, vals);
+  let hi = Math.max.apply(null, vals);
+  if (hi - lo < 1) hi = lo + 1;
+
+  const pad = 6;
+  const slot = w / series.length;
+  const bw = Math.min(20, slot * 0.45);
+  const y = v => h - (pad + (v - lo) / (hi - lo) * (h - 2 * pad));
+
+  const verdictColor = getComputedStyle(document.documentElement)
+    .getPropertyValue('--verdict').trim() || '#8ff740';
+
+  if (d.hrv_avg7) {
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = '#8a8a8e';
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(0, y(d.hrv_avg7));
+    ctx.lineTo(w, y(d.hrv_avg7));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  }
+
+  series.forEach((p, i) => {
+    if (p.value === null || p.value === undefined) return;
+    const isToday = i === series.length - 1;
+    ctx.fillStyle = isToday ? verdictColor : '#8a8a8e';
+    ctx.globalAlpha = isToday ? 1 : 0.55;
+    ctx.fillRect(i * slot + (slot - bw) / 2, y(p.value), bw, h - y(p.value));
+  });
+  ctx.globalAlpha = 1;
+}
+
+render();
+window.addEventListener('resize', render);
+</script>
+</body>
+</html>

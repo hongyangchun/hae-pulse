@@ -1,0 +1,18 @@
+# macOS 侧运行时生成物
+macos/panel.html
+macos/panel-live.html
+macos/cache.json
+
+# 凭证 —— 绝不提交
+.env
+macos/.env
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# 安装脚本的备份产物
+*.bak.*

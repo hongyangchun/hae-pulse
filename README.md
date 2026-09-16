@@ -1,69 +1,87 @@
 # HAE Pulse
 
-A health-recovery bar widget plugin for [Omarchy](https://omarchy.org): today's
-HRV vs your 7-day baseline, a recovery verdict color dot, and a click-to-open
-panel with resting HR, exercise ring, and a 7-day training log.
+把今天的 HRV 和恢复状态常驻在 **Omarchy 面板** 和 **macOS 菜单栏** 上。
+两端共用同一份数据层，只有渲染是各写各的。
 
-Read-only feed from the [Health Auto Export](https://healthyapis.com) (HAE)
-cloud API. The plugin never writes anything back.
+数据来自自建的 HAE 服务（`hae.qiaclass.com`）——只读，不回写任何健康数据。
 
-## Bar widget
+## 两个前端
 
-- HRV number tinted by recovery verdict: **ready** (green, at/above
-  baseline), **ease off** (amber, watch), **recovery** (theme urgent, rest)
-- Verdict is computed by comparing today's HRV against the previous 7-day
-  baseline
-- Left click opens the panel; right click forces an immediate refresh
-- Tooltip shows HRV delta, exercise minutes, calories, steps, sleep, weight,
-  and the last workout
-- Data refreshes every 10 minutes; the collector is a short-lived process, so
-  there is no resident background load
+| | Omarchy | macOS |
+|---|---|---|
+| 渲染 | `Main.qml`（Quickshell bar widget） | `render.py` + SwiftBar 插件 |
+| 菜单栏 | HRV 数字，按恢复状态着色 | 同 |
+| 展开 | HRV 7 日 sparkline、生命体征、7 天训练表 | 同（SwiftBar 用 `webview` 弹层） |
+| 安装 | `./install.sh omarchy` | `./install.sh macos` |
+| 细节 | [omarchy/hyc.hae-pulse/README.md](omarchy/hyc.hae-pulse/README.md) | [macos/README.md](macos/README.md) |
 
-## Panel
+## 结构
 
-- HRV 7-day trend sparkline (today's bar verdict-colored, dashed baseline)
-- HRV / resting HR today vs 7-day baseline (falls back to yesterday's HRV
-  until today's value syncs)
-- Sleep (total + deep) and weight (vs 7-day average)
-- Exercise minutes, calories, steps
-- 7-day workout table (name, duration, kcal, avg/max HR)
-- Footer shows data freshness ("updated 5m ago")
-
-## Requirements
-
-- Python 3 (stdlib only, no pip dependencies)
-- A Health Auto Export cloud API key with **read** access, provided via the
-  `HAE_READ_KEY` environment variable or `~/.hermes/.env`:
-
-  ```
-  HAE_READ_KEY=your-key-here
-  ```
-
-## Install
-
-```sh
-omarchy plugin add hongyangchun/omarchy-hae-pulse
+```
+collector.py                      数据层：查 hae.qiaclass.com，输出单行 JSON
+omarchy/hyc.hae-pulse/
+  Main.qml                        Quickshell 面板与弹层
+  manifest.json                   Omarchy 插件清单
+  collector.py -> ../../collector.py
+macos/
+  render.py                       SwiftBar 渲染层（替代 Main.qml）
+  panel.template.html             深色面板模板
+  plugins/hyc.hae-pulse.10m.py    SwiftBar 插件薄壳（10 分钟刷新）
+  .env.example                    可选的项目独立凭证
+install.sh                        安装到各端的运行位置
+LICENSE
 ```
 
-or clone it into your plugins directory:
+`collector.py` 在仓库里**只有一份**，放在根目录。两端都按「自身所在目录的相对路径」
+找到它，因为两个平台的加载器都要求插件目录能自包含地定位到这个文件：
+
+- **macOS**：`render.py` 用 `../collector.py`。
+- **Omarchy**：插件目录里的 `collector.py` 是指向仓库根的符号链接。`Main.qml` 里是
+  `pluginDir + "/collector.py"`，所以该文件必须出现在插件目录中。
+
+改一次 `collector.py`，两端同时生效。
+
+## 恢复状态判定
+
+由今天的 HRV 相对**前 7 天基线均值**的偏离幅度得出：
+
+| 状态 | 条件 | 含义 |
+|---|---|---|
+| READY | 偏离 ≥ −5% | 状态正常，可以按计划训练 |
+| EASE OFF | −15% ≤ 偏离 < −5% | 略低于基线，建议降强度 |
+| RECOVERY | 偏离 < −15% | 恢复日，避免高强度 |
+
+## 安装
 
 ```sh
-git clone https://github.com/hongyangchun/omarchy-hae-pulse \
-  ~/.config/omarchy/plugins/hyc.hae-pulse
-omarchy plugin enable hyc.hae-pulse
+git clone https://github.com/hongyangchun/hae-pulse.git
+cd hae-pulse
+
+./install.sh omarchy    # 链接到 ~/.config/omarchy/plugins
+./install.sh macos      # 指向 SwiftBar 并重启它
 ```
 
-Then add **HAE Pulse** to your bar layout (plugin manager or `shell.json`,
-default section: right) and restart the shell.
+**每台机器各跑一次** —— 软链用的是相对于仓库的路径，必须在实际所在的那台机器上求值。
+脚本是幂等的，重复运行不会破坏已正确的配置；遇到同名真目录会先备份成
+`<name>.bak.<时间戳>`。
 
-## Files
+## 凭证
 
-| File           | Purpose                                        |
-| -------------- | ---------------------------------------------- |
-| `Main.qml`     | Bar widget + popout panel (Quickshell/QML)     |
-| `collector.py` | HAE cloud fetcher, returns a JSON snapshot     |
-| `manifest.json`| Omarchy plugin manifest (bar-widget kind)      |
+一个只读 key，两端共用，放 `~/.hermes/.env`：
 
-## License
+```sh
+# 追加，不要覆盖 —— 这个文件里还有 hermes 的其他配置
+printf 'HAE_READ_KEY=%s\n' 'your-key' >> ~/.hermes/.env
+chmod 600 ~/.hermes/.env
+```
 
-MIT
+macOS 侧可以额外建 `macos/.env` 让该平台独立于 Omarchy（优先级更高，已在
+`.gitignore` 中）。查找顺序见 [macos/README.md](macos/README.md#配置)。
+
+## 要求
+
+- **Python 3.10+**。`collector.py` 用了 `str | None` 注解语法，macOS 自带的
+  `/usr/bin/python3` 是 3.9.6，会在运行时抛 `TypeError`（`py_compile` 不报，因为注解
+  在函数定义时才求值）。
+- Omarchy + Quickshell（Omarchy 端）。
+- SwiftBar 2.x，要求 macOS 12+（macOS 端）。
