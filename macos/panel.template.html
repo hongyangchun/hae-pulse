@@ -1,35 +1,54 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="color-scheme" content="dark">
-<title>HAE Pulse</title>
+<meta name="color-scheme" content="light dark">
+<title>HAE 健康</title>
 <style>
+  /* 面板的定位（按 2026-09-17 的评审决定）：保留，但**降级** —— 只放下拉放不下的
+     东西（可视化趋势 + 一个跳去完整仪表盘的入口），不再做下拉的放大版。
+     所以这里的排版 token 与下拉共用一套：同序、同列宽（标签 106 / 值 112）、同语言。
+     主题跟随系统 —— 之前恒暗，浅色 Mac 上弹层是黑的、下拉是浅的，两边不像一家人。 */
   :root {
+    color-scheme: light dark;
     --bg: #1c1c1e;
+    --card: #242426;
     --fg: #e8e8ea;
     --dim: #8a8a8e;
     --line: rgba(255,255,255,.07);
     --ready: #8ff740;
     --watch: #d7a55b;
     --rest: #ff5c57;
+    --sans: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
     --mono: "SF Mono", "Menlo", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f6f7;
+      --card: #ffffff;
+      --fg: #1d1d1f;
+      --dim: #6e6e73;
+      --line: rgba(0,0,0,.09);
+      --ready: #3b6d11;
+      --watch: #854f0b;
+      --rest: #a32d2d;
+    }
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     background: var(--bg);
     color: var(--fg);
-    font-family: var(--mono);
+    font-family: var(--sans);
     font-size: 12px;
-    line-height: 1.45;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
   .panel { padding: 16px 18px 18px; }
 
-  .hero { display: flex; align-items: center; gap: 12px; padding-bottom: 14px; }
+  .hero { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; }
   .heart { font-size: 26px; line-height: 1; color: var(--verdict); }
-  .hero h1 { font-size: 15px; font-weight: 500; letter-spacing: .08em; }
-  .hero .meta { color: var(--dim); font-size: 11px; margin-top: 3px; }
+  .hero h1 { font-size: 15px; font-weight: 600; letter-spacing: .02em; }
+  .hero .meta { color: var(--dim); font-size: 11px; margin-top: 4px; }
   .hero .meta b { color: var(--verdict); font-weight: 500; }
 
   .stale {
@@ -37,32 +56,35 @@
     border: 1px solid rgba(215,165,91,.3);
     color: var(--watch);
     font-size: 11px;
-    padding: 6px 9px;
-    border-radius: 6px;
+    padding: 8px 12px;
+    border-radius: 8px;
     margin-bottom: 12px;
   }
 
   canvas { display: block; width: 100%; height: 64px; margin-bottom: 4px; }
 
-  .rows { margin: 10px 0 0; }
-  .row { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; }
+  /* 与下拉同一套列宽，三端不再各写一个数 */
+  .rows { margin: 12px 0 0; }
+  .row { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; }
   .row .label { width: 106px; color: var(--dim); flex: none; }
-  .row .value { width: 104px; font-weight: 500; flex: none; }
+  .row .value { width: 112px; font-weight: 600; flex: none; font-family: var(--mono); font-variant-numeric: tabular-nums; }
   .row .base { flex: 1; text-align: right; color: var(--dim); font-size: 11px; }
 
-  hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0 12px; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0 12px; }
 
-  .section { color: var(--dim); font-size: 11px; letter-spacing: .1em; margin-bottom: 8px; }
+  .section { color: var(--dim); font-size: 11px; letter-spacing: .06em; margin-bottom: 8px; }
 
-  .work { display: grid; grid-template-columns: 40px 1fr 52px 62px 72px; gap: 8px; padding: 2.5px 0; font-size: 11px; }
-  .work .day { color: var(--dim); }
+  .work { display: grid; grid-template-columns: 40px 1fr 56px 64px 76px; gap: 8px; padding: 4px 0; font-size: 11px; }
+  .work .day { color: var(--dim); font-family: var(--mono); }
   .work .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .work .hr { color: var(--dim); text-align: right; }
-  .work .min, .work .kcal { color: var(--fg); }
+  .work .hr { color: var(--dim); text-align: right; font-family: var(--mono); }
+  .work .min, .work .kcal { color: var(--fg); font-family: var(--mono); }
 
   .empty { color: var(--dim); font-size: 11px; }
 
-  footer { margin-top: 14px; color: var(--dim); font-size: 11px; }
+  footer { margin-top: 16px; color: var(--dim); font-size: 11px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  footer a { color: var(--fg); text-decoration: none; border-bottom: 1px solid var(--line); }
+  footer a:hover { border-bottom-color: var(--dim); }
 </style>
 </head>
 <body>
@@ -70,19 +92,19 @@
   <div id="stale"></div>
 
   <div class="hero">
-    <div class="heart">&#9829;</div>
+    <div class="heart" aria-hidden="true">&#9829;</div>
     <div>
-      <h1>HAE PULSE</h1>
+      <h1>HAE 健康</h1>
       <div class="meta" id="meta"></div>
     </div>
   </div>
 
-  <canvas id="spark"></canvas>
+  <canvas id="spark" aria-label="HRV 近 7 天柱状图" role="img"></canvas>
 
   <div class="rows" id="rows"></div>
 
   <hr>
-  <div class="section">TRAINING &middot; 7 DAYS</div>
+  <div class="section">训练 &middot; 近 7 天</div>
   <div id="work"></div>
 
   <footer id="foot"></footer>
@@ -90,11 +112,12 @@
 
 <script>
 const DATA = /*__HAE_DATA__*/null;
+const DASHBOARD = 'https://hae.qiaclass.com/dashboard';
 
 const VERDICT = {
-  ready: { color: 'var(--ready)', label: 'READY' },
-  watch: { color: 'var(--watch)', label: 'EASE OFF' },
-  rest:  { color: 'var(--rest)',  label: 'RECOVERY' }
+  ready: { color: 'var(--ready)', label: '可以练' },
+  watch: { color: 'var(--watch)', label: '悠着点' },
+  rest:  { color: 'var(--rest)',  label: '该休息' }
 };
 
 function fmtHours(h) {
@@ -105,13 +128,18 @@ function fmtHours(h) {
   return hh + 'h' + (mm < 10 ? '0' : '') + mm + 'm';
 }
 
+function num(v) {
+  if (v === null || v === undefined) return '\u2014';
+  return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
 function ago(iso) {
   if (!iso) return '';
   const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (secs < 90) return 'updated just now';
-  if (secs < 3600) return 'updated ' + Math.floor(secs / 60) + 'm ago';
-  if (secs < 86400) return 'updated ' + Math.floor(secs / 3600) + 'h ago';
-  return 'updated ' + Math.floor(secs / 86400) + 'd ago';
+  if (secs < 90) return '刚刚更新';
+  if (secs < 3600) return Math.floor(secs / 60) + ' 分钟前更新';
+  if (secs < 86400) return Math.floor(secs / 3600) + ' 小时前更新';
+  return Math.floor(secs / 86400) + ' 天前更新';
 }
 
 function esc(s) {
@@ -119,17 +147,14 @@ function esc(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function put(html) { return html; }
-
 function render() {
   const d = DATA;
-  document.body.style.margin = '0';
 
   if (!d || !d.ok) {
     document.documentElement.style.setProperty('--verdict', 'var(--rest)');
-    document.getElementById('meta').textContent = 'offline';
+    document.getElementById('meta').textContent = '离线';
     document.getElementById('rows').innerHTML =
-      '<div class="empty">' + esc((d && d.error) || 'no data') + '</div>';
+      '<div class="empty">' + esc((d && d.error) || '无数据') + '</div>';
     document.getElementById('spark').style.display = 'none';
     document.getElementById('work').innerHTML = '';
     document.getElementById('foot').textContent = '';
@@ -141,55 +166,62 @@ function render() {
 
   if (d.stale) {
     document.getElementById('stale').innerHTML =
-      '<div class="stale">showing cached data \u2014 ' + esc(d.stale_error || 'sync failed') + '</div>';
+      '<div class="stale">显示的是缓存数据 \u2014 ' + esc(d.stale_error || '同步失败') + '</div>';
   }
 
   const delta = d.hrv_delta_pct;
   document.getElementById('meta').innerHTML = v.label + ' \u00b7 ' + (delta === null || delta === undefined
-    ? 'no baseline yet'
-    : '<b>' + (delta >= 0 ? '+' : '') + delta + '%</b> vs 7d baseline');
+    ? '暂无基准'
+    : '<b>' + (delta >= 0 ? '+' : '') + delta + '%</b> 对比 7 日均值');
 
   drawSpark(d);
 
+  // 行序与下拉、与 Omarchy 弹层三端统一：
+  // HRV → 静息心率 → 心肺耐力(估) → 睡眠 → 体重 → 锻炼
   const rows = [];
-  const hrvToday = d.hrv_today === null || d.hrv_today === undefined ? '\u2014' : d.hrv_today + ' ms';
-  const hrvBase = d.hrv_today === null || d.hrv_today === undefined
-    ? 'yesterday ' + (d.hrv_yesterday === null || d.hrv_yesterday === undefined ? '\u2014' : d.hrv_yesterday + ' ms')
-    : (d.hrv_avg7 === null || d.hrv_avg7 === undefined ? '' : '7d base ' + d.hrv_avg7 + ' ms');
-  rows.push(['HRV today', hrvToday, hrvBase, v.color]);
 
-  rows.push(['Resting HR',
+  const hasHrv = d.hrv_today !== null && d.hrv_today !== undefined;
+  rows.push(['HRV 今日',
+    hasHrv ? d.hrv_today + ' ms' : '\u2014',
+    hasHrv
+      ? (d.hrv_avg7 === null || d.hrv_avg7 === undefined ? '' : '7 日均 ' + d.hrv_avg7 + ' ms')
+      : '昨日 ' + (d.hrv_yesterday === null || d.hrv_yesterday === undefined ? '\u2014' : d.hrv_yesterday + ' ms'),
+    v.color]);
+
+  rows.push(['静息心率',
     d.rhr_today === null || d.rhr_today === undefined ? '\u2014' : d.rhr_today + ' bpm',
-    d.rhr_avg7 === null || d.rhr_avg7 === undefined ? '' : '7d base ' + d.rhr_avg7 + ' bpm',
+    d.rhr_avg7 === null || d.rhr_avg7 === undefined ? '' : '7 日均 ' + d.rhr_avg7 + ' bpm',
     'var(--fg)']);
 
+  // 心肺耐力是估算值（Uth 公式，来源是静息心率）：Apple 只在户外步行/跑步时测
+  // Cardio Fitness，本账号没有这类训练，实测值恒为空。所以标「(估)」。
   if (d.vo2max) {
     const vo = d.vo2max;
-    let base = vo.avg7 === null || vo.avg7 === undefined ? '' : '7d base ' + vo.avg7;
+    let base = vo.avg7 === null || vo.avg7 === undefined ? '' : '7 日均 ' + vo.avg7;
     if (vo.hrmax_ref !== null && vo.hrmax_ref !== undefined) {
       base += (base ? ' \u00b7 ' : '') + 'HRmax ' + vo.hrmax_ref;
     }
-    rows.push(['VO2max est',
+    rows.push(['心肺耐力(估)',
       vo.est === null || vo.est === undefined ? '\u2014' : vo.est + ' ml/kg',
       base, 'var(--fg)']);
   }
 
   if (d.sleep) {
-    let deep = 'deep ' + fmtHours(d.sleep.deep_hr);
+    let deep = '深睡 ' + fmtHours(d.sleep.deep_hr);
     if (d.sleep.deep_pct !== null && d.sleep.deep_pct !== undefined) deep += ' \u00b7 ' + d.sleep.deep_pct + '%';
-    rows.push(['Sleep', fmtHours(d.sleep.total_hr), deep, 'var(--fg)']);
+    rows.push(['睡眠', fmtHours(d.sleep.total_hr), deep, 'var(--fg)']);
   }
 
   if (d.weight) {
-    const ag = d.weight.avg7 === null || d.weight.avg7 === undefined ? '' : '7d avg ' + d.weight.avg7 + ' kg';
+    const ag = d.weight.avg7 === null || d.weight.avg7 === undefined ? '' : '7 日均 ' + d.weight.avg7 + ' kg';
     const staleDay = d.weight.day && d.fetched_at && d.weight.day !== d.fetched_at.slice(0, 10)
       ? ' \u00b7 ' + d.weight.day.slice(5) : '';
-    rows.push(['Weight', d.weight.kg + ' kg', ag + staleDay, 'var(--fg)']);
+    rows.push(['体重', d.weight.kg + ' kg', ag + staleDay, 'var(--fg)']);
   }
 
-  rows.push(['Exercise',
-    d.exercise_min_today + ' / ' + d.exercise_goal + ' min',
-    d.kcal_today + ' kcal \u00b7 ' + d.steps_today + ' steps', 'var(--fg)']);
+  rows.push(['锻炼',
+    d.exercise_min_today + ' / ' + d.exercise_goal + ' 分钟',
+    num(d.kcal_today) + ' kcal \u00b7 ' + num(d.steps_today) + ' 步', 'var(--fg)']);
 
   document.getElementById('rows').innerHTML = rows.map(r =>
     '<div class="row"><span class="label">' + esc(r[0]) + '</span>' +
@@ -200,13 +232,16 @@ function render() {
   document.getElementById('work').innerHTML = w.length ? w.map(x =>
     '<div class="work"><span class="day">' + esc(String(x.day).slice(5)) + '</span>' +
     '<span class="name">' + esc(x.name) + '</span>' +
-    '<span class="min">' + x.min + 'min</span>' +
-    '<span class="kcal">' + x.kcal + 'kcal</span>' +
+    '<span class="min">' + x.min + ' 分钟</span>' +
+    '<span class="kcal">' + num(x.kcal) + ' kcal</span>' +
     '<span class="hr">' + (x.avg_hr ? Math.round(x.avg_hr) : '\u2014') + '/' +
       (x.max_hr ? Math.round(x.max_hr) : '\u2014') + '</span></div>').join('')
-    : '<div class="empty">no workouts logged</div>';
+    : '<div class="empty">暂无训练记录</div>';
 
-  document.getElementById('foot').textContent = ago(d.fetched_at);
+  // 下拉放不下的那件事：跳到完整仪表盘（历史更长、图表可交互）
+  document.getElementById('foot').innerHTML =
+    '<span>' + esc(ago(d.fetched_at)) + '</span>' +
+    '<a href="' + DASHBOARD + '">打开健康仪表盘 \u2192</a>';
 }
 
 function drawSpark(d) {
@@ -235,10 +270,12 @@ function drawSpark(d) {
 
   const verdictColor = getComputedStyle(document.documentElement)
     .getPropertyValue('--verdict').trim() || '#8ff740';
+  const dimColor = getComputedStyle(document.documentElement)
+    .getPropertyValue('--dim').trim() || '#8a8a8e';
 
   if (d.hrv_avg7) {
     ctx.globalAlpha = 0.45;
-    ctx.strokeStyle = '#8a8a8e';
+    ctx.strokeStyle = dimColor;
     ctx.setLineDash([3, 3]);
     ctx.beginPath();
     ctx.moveTo(0, y(d.hrv_avg7));
@@ -251,7 +288,7 @@ function drawSpark(d) {
   series.forEach((p, i) => {
     if (p.value === null || p.value === undefined) return;
     const isToday = i === series.length - 1;
-    ctx.fillStyle = isToday ? verdictColor : '#8a8a8e';
+    ctx.fillStyle = isToday ? verdictColor : dimColor;
     ctx.globalAlpha = isToday ? 1 : 0.55;
     ctx.fillRect(i * slot + (slot - bw) / 2, y(p.value), bw, h - y(p.value));
   });

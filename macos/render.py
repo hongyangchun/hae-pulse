@@ -42,7 +42,9 @@ C_DIM = "#6E6E73,#9A9A9F"
 C_FG = "#1D1D1F,#E8E8EA"
 
 VCOLOR = {"ready": C_READY, "watch": C_WATCH, "rest": C_REST}
-VLABEL = {"ready": "READY", "watch": "EASE OFF", "rest": "RECOVERY"}
+# 三端统一中文，且与仪表盘状态条用同一套词（可以练 / 悠着点 / 该休息）。
+# verdict 的取值仍是 ready/watch/rest —— 那是数据标识（collector.py 输出），不翻译。
+VLABEL = {"ready": "可以练", "watch": "悠着点", "rest": "该休息"}
 
 # Self-hosted HAE dashboard (password-gated HTML page on the same host as the
 # API). Not healthyapps.dev — that is the upstream vendor's site; the data
@@ -123,8 +125,20 @@ def dwidth(text):
 
 
 def pad(text, width):
+    """等宽填充。注意 width 是**下限**：内容刚好占满时会留 0 个空格，两列直接粘连
+    （实测过 "Exercise  65 / 30 min585.1 kcal" 这种读数）。
+    所以调用方必须先算好统一的列宽 w = max(下限, 最长内容宽 + 2)，不要让 pad 自己兜底。
+    """
     text = str(text)
     return text + " " * max(0, width - dwidth(text))
+
+
+def thousands(n):
+    """大数加千分位：5695 步、585 kcal 不加分隔读不出量级。"""
+    try:
+        return "{:,}".format(int(round(float(n))))
+    except (TypeError, ValueError):
+        return str(n)
 
 
 def fmt_hours(hours):
@@ -148,12 +162,12 @@ def ago_text(iso):
     except Exception:
         return ""
     if secs < 90:
-        return "updated just now"
+        return "刚刚更新"
     if secs < 3600:
-        return "updated %dm ago" % (secs // 60)
+        return "%d 分钟前更新" % (secs // 60)
     if secs < 86400:
-        return "updated %dh ago" % (secs // 3600)
-    return "updated %dd ago" % (secs // 86400)
+        return "%d 小时前更新" % (secs // 3600)
+    return "%d 天前更新" % (secs // 86400)
 
 
 # ------------------------------------------------------------ sparkline png
@@ -251,122 +265,127 @@ def menu(data):
     if not data.get("ok"):
         out.append("● | color=%s size=13 font=Menlo" % C_DIM)
         out.append("---")
-        out.append("HAE Pulse · offline | color=%s font=Menlo size=13" % C_REST)
-        out.append(str(data.get("error", "no data"))[:110] + " | color=%s size=11 font=Menlo" % C_DIM)
+        out.append("HAE 健康 · 离线 | color=%s font=Menlo size=13" % C_REST)
+        out.append(str(data.get("error", "无数据"))[:110] + " | color=%s size=11 font=Menlo" % C_DIM)
         out.append("---")
         panel = write_panel(data)
         if panel:
-            out.append("Open panel | href=file://%s webview=true webvieww=440 webviewh=620 font=Menlo size=12"
+            out.append("打开面板 | href=file://%s webview=true webvieww=440 webviewh=620 font=Menlo size=12"
                        % quote(panel))
-        out.append("Retry now | refresh=true font=Menlo size=12")
+        out.append("立即刷新 | refresh=true font=Menlo size=12")
         return "\n".join(out)
 
     verdict = data.get("verdict", "ready")
     vcolor = VCOLOR.get(verdict, C_READY)
-    vlabel = VLABEL.get(verdict, "READY")
+    vlabel = VLABEL.get(verdict, "可以练")
     hrv_today = data.get("hrv_today")
     stale = " ●" if data.get("stale") else ""
 
-    # menubar: HRV number tinted by verdict
+    # 菜单栏只承载 L1：一个数字（HRV）按恢复状态着色。
     out.append("%s | color=%s size=13 font=Menlo" % (
         round(hrv_today) if hrv_today is not None else "●", vcolor))
 
     out.append("---")
-    out.append("HAE PULSE · %s%s | color=%s font=Menlo size=13" % (vlabel, stale, vcolor))
+    out.append("HAE 健康 · %s%s | color=%s font=Menlo size=13" % (vlabel, stale, vcolor))
 
     delta = data.get("hrv_delta_pct")
     if delta is None:
-        sub = "no baseline yet"
+        sub = "暂无基准"
     else:
-        sub = "%s%.1f%% vs 7d baseline" % ("+" if delta >= 0 else "", delta)
+        sub = "%s%.1f%% 对比 7 日均值" % ("+" if delta >= 0 else "", delta)
     out.append(sub + " | color=%s font=Menlo size=11" % C_DIM)
 
     stamp = ago_text(data.get("fetched_at"))
     if data.get("stale"):
-        stamp = "stale · %s · %s" % (stamp or "cached", data.get("stale_error", ""))
+        stamp = "数据陈旧 · %s · %s" % (stamp or "用的是缓存", data.get("stale_error", ""))
     if stamp:
         out.append(stamp.strip(" ·") + " | color=%s font=Menlo size=11" % C_DIM)
 
-    # sparkline
+    # HRV 7 日柱状图（PNG 自绘，末柱按 verdict 着色，虚线是 7 日均值）
     png = sparkline_png(data.get("hrv_series"), data.get("hrv_avg7"), verdict)
     if png:
         out.append("---")
-        out.append("HRV · 7 days | image=%s width=156 height=30 font=Menlo size=11" % png)
+        out.append("HRV · 近 7 天 | image=%s width=156 height=30 font=Menlo size=11" % png)
 
-    # vitals — label / value / baseline, mirroring Main.qml's three columns
-    out.append("---")
+    # ---- L2 关键量：标签 / 值 / 基准 三列 ----
+    # 行序三端统一（macOS 与 Omarchy 曾经不同）：HRV → 静息心率 → 心肺耐力 → 睡眠 → 体重 → 锻炼。
+    # 先收集成列表再统一算列宽 —— 等宽对齐要求所有行的列起点一致，
+    # 逐行各自 pad 会让「心肺耐力(估)」这种更宽的标签把整行顶歪。
+    rows = []
+
     hrv_base = data.get("hrv_avg7")
     if hrv_today is not None:
-        right = "7d base %s ms" % hrv_base if hrv_base is not None else ""
+        right = "7 日均 %s ms" % hrv_base if hrv_base is not None else ""
     else:
-        right = "yesterday %s" % (
+        right = "昨日 %s" % (
             "%s ms" % data["hrv_yesterday"] if data.get("hrv_yesterday") is not None else "—")
-    out.append("%s%s%s | color=%s font=Menlo size=12" % (
-        pad("HRV today", 14), pad("%s ms" % hrv_today if hrv_today is not None else "—", 11),
-        pad(right, 18), vcolor))
+    rows.append(("HRV 今日", "%s ms" % hrv_today if hrv_today is not None else "—", right, vcolor))
 
     rhr_today, rhr_base = data.get("rhr_today"), data.get("rhr_avg7")
-    out.append("%s%s%s | color=%s font=Menlo size=12" % (
-        pad("Resting HR", 14), pad("%s bpm" % rhr_today if rhr_today is not None else "—", 11),
-        pad("7d base %s bpm" % rhr_base if rhr_base is not None else "", 18), C_FG))
+    rows.append(("静息心率", "%s bpm" % rhr_today if rhr_today is not None else "—",
+                 "7 日均 %s bpm" % rhr_base if rhr_base is not None else "", C_FG))
 
-    # VO2max 估算值。放在下拉里而不是菜单栏：它按公式是静息心率的单调变换，
-    # 和上面那行 Resting HR 高度共线，占菜单栏不划算；但作为一个「心脏能力」的
-    # 绝对数字量级，看趋势时有意义。标 est 以区别于 Apple 的实测值。
+    # 心肺耐力估算值。放下拉而不是菜单栏：按 Uth 公式它是静息心率的单调变换，
+    # 与上一行高度共线，占菜单栏不划算；但作为「心脏能力」的绝对量级看趋势有意义。
+    # 标「(估)」以区别于 Apple 的实测值（本账号无户外步行/跑步，实测值恒为空）。
     vo = data.get("vo2max")
     if vo:
-        right = "7d base %s" % vo["avg7"] if vo.get("avg7") is not None else ""
+        right = "7 日均 %s" % vo["avg7"] if vo.get("avg7") is not None else ""
         if vo.get("hrmax_ref") is not None:
             right = (right + " · " if right else "") + "HRmax %s" % vo["hrmax_ref"]
-        out.append("%s%s%s | color=%s font=Menlo size=12" % (
-            pad("VO2max est", 14),
-            pad("%s ml/kg" % vo["est"] if vo.get("est") is not None else "—", 11),
-            pad(right, 18), C_FG))
+        rows.append(("心肺耐力(估)", "%s ml/kg" % vo["est"] if vo.get("est") is not None else "—",
+                     right, C_FG))
 
     sleep = data.get("sleep")
     if sleep:
-        deep = "deep %s" % fmt_hours(sleep.get("deep_hr"))
+        deep = "深睡 %s" % fmt_hours(sleep.get("deep_hr"))
         if sleep.get("deep_pct") is not None:
             deep += " · %d%%" % sleep["deep_pct"]
-        out.append("%s%s%s | color=%s font=Menlo size=12" % (
-            pad("Sleep", 14), pad(fmt_hours(sleep.get("total_hr")), 11), pad(deep, 18), C_FG))
+        rows.append(("睡眠", fmt_hours(sleep.get("total_hr")), deep, C_FG))
 
     weight = data.get("weight")
     if weight:
-        right = "7d avg %s kg" % weight["avg7"] if weight.get("avg7") is not None else ""
-        out.append("%s%s%s | color=%s font=Menlo size=12" % (
-            pad("Weight", 14), pad("%s kg" % weight["kg"], 11), pad(right, 18), C_FG))
+        rows.append(("体重", "%s kg" % weight["kg"],
+                     "7 日均 %s kg" % weight["avg7"] if weight.get("avg7") is not None else "", C_FG))
 
-    out.append("%s%s%s | color=%s font=Menlo size=12" % (
-        pad("Exercise", 14),
-        pad("%s / %s min" % (data.get("exercise_min_today", 0), data.get("exercise_goal", 30)), 11),
-        pad("%s kcal · %s steps" % (data.get("kcal_today", 0), data.get("steps_today", 0)), 18),
-        C_FG))
+    rows.append(("锻炼",
+                 "%s / %s 分钟" % (data.get("exercise_min_today", 0), data.get("exercise_goal", 30)),
+                 "%s kcal · %s 步" % (thousands(data.get("kcal_today", 0)),
+                                      thousands(data.get("steps_today", 0))),
+                 C_FG))
 
-    # training log
-    rows = data.get("workouts_7d") or []
     out.append("---")
-    out.append("TRAINING · 7 DAYS | color=%s font=Menlo size=11" % C_DIM)
-    if not rows:
-        out.append("no workouts logged | color=%s font=Menlo size=11" % C_DIM)
-    for row in rows:
+    # 列宽 = max(下限, 最长内容 + 2) —— +2 保证两列之间至少有 2 格，不会粘连
+    w1 = max(12, max(dwidth(r[0]) for r in rows) + 2)
+    w2 = max(12, max(dwidth(r[1]) for r in rows) + 2)
+    for label, value, right, color in rows:
+        out.append("%s%s%s | color=%s font=Menlo size=12" % (
+            pad(label, w1), pad(value, w2), right, color))
+
+    # ---- 训练记录 ----
+    workouts = data.get("workouts_7d") or []
+    out.append("---")
+    out.append("训练 · 近 7 天 | color=%s font=Menlo size=11" % C_DIM)
+    if not workouts:
+        out.append("暂无训练记录 | color=%s font=Menlo size=11" % C_DIM)
+    wname = max([16] + [dwidth(str(w.get("name", "—"))) + 2 for w in workouts])
+    for row in workouts:
         day = str(row.get("day", ""))[5:]
-        name = pad(str(row.get("name", "—")), 16)
-        detail = "%s · %s kcal · %s" % (
-            row.get("min", 0), row.get("kcal", 0),
+        detail = "%s 分钟 · %s kcal · %s" % (
+            row.get("min", 0), thousands(row.get("kcal", 0)),
             "%s/%s bpm" % (round(row["avg_hr"]) if row.get("avg_hr") else "—",
                            round(row["max_hr"]) if row.get("max_hr") else "—"))
         out.append("%s %s%s | color=%s font=Menlo size=11" % (
-            day, name, detail, C_FG))
+            day, pad(str(row.get("name", "—")), wname), detail, C_FG))
 
-    # actions
+    # ---- 动作 ----
     panel = write_panel(data)
     out.append("---")
     if panel:
-        out.append("Open panel | href=file://%s webview=true webvieww=440 webviewh=620 font=Menlo size=12"
+        out.append("打开面板 | href=file://%s webview=true webvieww=440 webviewh=620 font=Menlo size=12"
                    % quote(panel))
-    out.append("Refresh now | refresh=true font=Menlo size=12")
-    out.append("Open HAE dashboard | href=%s font=Menlo size=12" % DASHBOARD)
+    out.append("立即刷新 | refresh=true font=Menlo size=12")
+    out.append("打开健康仪表盘 | href=%s font=Menlo size=12" % DASHBOARD)
 
     return "\n".join(out)
 

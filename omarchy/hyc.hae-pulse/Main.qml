@@ -35,12 +35,14 @@ Panel {
     if (snap.verdict === "watch") return cWatch
     return cRest
   }
+  // 三端统一中文，且与 macOS 下拉、仪表盘状态条用同一套词。
+  // verdict 的取值仍是 ready/watch/rest —— 那是数据标识，不翻译。
   readonly property string verdictLabel: {
-    if (!snap || !snap.ok) return "OFFLINE"
-    if (loading) return "SYNCING"
-    if (snap.verdict === "ready") return "READY"
-    if (snap.verdict === "watch") return "EASE OFF"
-    return "RECOVERY"
+    if (!snap || !snap.ok) return "离线"
+    if (loading) return "同步中"
+    if (snap.verdict === "ready") return "可以练"
+    if (snap.verdict === "watch") return "悠着点"
+    return "该休息"
   }
 
   function fmtHours(h) {
@@ -53,9 +55,9 @@ Panel {
   function agoText() {
     if (!root.updatedAt) return ""
     var s = Math.max(0, Math.floor((Date.now() - root.updatedAt) / 1000))
-    if (s < 60) return "updated just now"
-    if (s < 3600) return "updated " + Math.floor(s / 60) + "m ago"
-    return "updated " + Math.floor(s / 3600) + "h ago"
+    if (s < 60) return "刚刚更新"
+    if (s < 3600) return Math.floor(s / 60) + " 分钟前更新"
+    return Math.floor(s / 3600) + " 小时前更新"
   }
 
   // ---- data refresh ---------------------------------------------------------
@@ -106,7 +108,7 @@ Panel {
             root.failed = false
             root.updatedAt = Date.now()
             root.updatedTick++
-          } else { root.failed = true; root.failMsg = j.error || "unknown" }
+          } else { root.failed = true; root.failMsg = j.error || "未知错误" }
         } catch (e) {
           root.failed = true; root.failMsg = String(e).slice(0, 80)
         }
@@ -114,7 +116,7 @@ Panel {
     }
     onExited: function(code) {
       root.loading = false
-      if (code !== 0) { root.failed = true; root.failMsg = "collector exit " + code }
+      if (code !== 0) { root.failed = true; root.failMsg = "collector 退出码 " + code }
     }
   }
 
@@ -126,8 +128,7 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    // HRV number tinted by recovery verdict; falls back to the bar's own
-    // foreground while offline.
+    // 菜单栏只承载 L1：HRV 数字按恢复状态着色，离线时退回栏自身的前景色。
     foreground: root.snap && root.snap.ok ? root.verdictColor : root.barForeground
     text: {
       if (!root.snap || !root.snap.ok) return "●"
@@ -135,24 +136,24 @@ Panel {
       return h != null ? String(Math.round(h)) : "●"
     }
     tooltipText: {
-      if (root.loading && !root.snap) return "HAE Pulse · syncing…"
-      if (!root.snap || !root.snap.ok) return "HAE Pulse · " + (root.failMsg || "no data")
+      if (root.loading && !root.snap) return "HAE 健康 · 同步中…"
+      if (!root.snap || !root.snap.ok) return "HAE 健康 · " + (root.failMsg || "无数据")
       var s = root.snap
       var lines = []
       if (s.hrv_today != null)
-        lines.push("HRV " + s.hrv_today + " ms (" + (s.hrv_delta_pct >= 0 ? "+" : "") + s.hrv_delta_pct + "% vs base) · " + root.verdictLabel)
+        lines.push("HRV " + s.hrv_today + " ms (" + (s.hrv_delta_pct >= 0 ? "+" : "") + s.hrv_delta_pct + "% 对比基准) · " + root.verdictLabel)
       else
-        lines.push("HRV awaiting sync · yesterday " + (s.hrv_yesterday != null ? s.hrv_yesterday + " ms" : "—"))
-      lines.push("Exercise " + s.exercise_min_today + "/" + s.exercise_goal + " min · " + s.kcal_today + " kcal · " + s.steps_today + " steps")
+        lines.push("HRV 待同步 · 昨日 " + (s.hrv_yesterday != null ? s.hrv_yesterday + " ms" : "—"))
+      lines.push("锻炼 " + s.exercise_min_today + "/" + s.exercise_goal + " 分钟 · " + s.kcal_today + " kcal · " + s.steps_today + " 步")
       if (s.sleep)
-        lines.push("Sleep " + root.fmtHours(s.sleep.total_hr) + " · deep " + (s.sleep.deep_pct != null ? s.sleep.deep_pct + "%" : root.fmtHours(s.sleep.deep_hr)))
+        lines.push("睡眠 " + root.fmtHours(s.sleep.total_hr) + " · 深睡 " + (s.sleep.deep_pct != null ? s.sleep.deep_pct + "%" : root.fmtHours(s.sleep.deep_hr)))
       if (s.weight)
-        lines.push("Weight " + s.weight.kg + " kg" + (s.weight.avg7 != null ? " · 7d avg " + s.weight.avg7 + " kg" : ""))
+        lines.push("体重 " + s.weight.kg + " kg" + (s.weight.avg7 != null ? " · 7 日均 " + s.weight.avg7 + " kg" : ""))
       if (s.vo2max)
-        lines.push("VO2max " + s.vo2max.est + " ml/kg (est)" + (s.vo2max.avg7 != null ? " · 7d base " + s.vo2max.avg7 : ""))
+        lines.push("心肺耐力(估) " + s.vo2max.est + " ml/kg" + (s.vo2max.avg7 != null ? " · 7 日均 " + s.vo2max.avg7 : ""))
       if (s.workouts_7d && s.workouts_7d.length) {
         var w = s.workouts_7d[0]
-        lines.push("Last: " + w.day.slice(5) + " " + w.name + " " + w.min + "min " + w.kcal + "kcal")
+        lines.push("最近：" + w.day.slice(5) + " " + w.name + " " + w.min + " 分钟 " + w.kcal + " kcal")
       }
       return lines.join("\n")
     }
@@ -179,13 +180,13 @@ Panel {
 
       PanelHero {
         width: parent.width
-        title: "HAE PULSE"
+        title: "HAE 健康"
         detail: root.verdictLabel
         meta: {
-          if (!root.snap || !root.snap.ok) return "waiting for data"
-          if (root.snap.hrv_delta_pct == null) return "no baseline yet"
+          if (!root.snap || !root.snap.ok) return "等待数据"
+          if (root.snap.hrv_delta_pct == null) return "暂无基准"
           var d = root.snap.hrv_delta_pct
-          return (d >= 0 ? "+" : "") + d + "% vs 7d baseline"
+          return (d >= 0 ? "+" : "") + d + "% 对比 7 日均值"
         }
         foreground: root.foreground
         fontFamily: root.fontFamily
@@ -249,55 +250,56 @@ Panel {
       }
 
       // vitals rows
+      // 行序与 macOS 下拉三端统一（此前 macOS 把心肺耐力排在睡眠前、这里排在体重后）：
+      // HRV → 静息心率 → 心肺耐力(估) → 睡眠 → 体重 → 锻炼
       Repeater {
         model: {
           if (!root.snap || !root.snap.ok) return []
           var s = root.snap
           var rows = []
           rows.push({
-            label: "HRV today",
+            label: "HRV 今日",
             value: s.hrv_today != null ? s.hrv_today + " ms" : "—",
             base: s.hrv_today != null
-                    ? (s.hrv_avg7 != null ? "7d base " + s.hrv_avg7 + " ms" : "")
-                    : ("yesterday " + (s.hrv_yesterday != null ? s.hrv_yesterday + " ms" : "—")),
+                    ? (s.hrv_avg7 != null ? "7 日均 " + s.hrv_avg7 + " ms" : "")
+                    : ("昨日 " + (s.hrv_yesterday != null ? s.hrv_yesterday + " ms" : "—")),
             tint: root.verdictColor
           })
           rows.push({
-            label: "Resting HR",
+            label: "静息心率",
             value: s.rhr_today != null ? s.rhr_today + " bpm" : "—",
-            base: s.rhr_avg7 != null ? "7d base " + s.rhr_avg7 + " bpm" : "",
+            base: s.rhr_avg7 != null ? "7 日均 " + s.rhr_avg7 + " bpm" : "",
             tint: root.foreground
           })
+          // 心肺耐力是估算值（Uth 公式，来源是静息心率）：Apple 只在户外步行/跑步时
+          // 测 Cardio Fitness，本账号没有这类训练，实测值恒为空。所以标「(估)」。
+          if (s.vo2max)
+            rows.push({
+              label: "心肺耐力(估)",
+              value: s.vo2max.est != null ? s.vo2max.est + " ml/kg" : "—",
+              base: (s.vo2max.avg7 != null ? "7 日均 " + s.vo2max.avg7 : "") +
+                    (s.vo2max.hrmax_ref != null ? (s.vo2max.avg7 != null ? " · " : "") + "HRmax " + s.vo2max.hrmax_ref : ""),
+              tint: root.foreground
+            })
           if (s.sleep)
             rows.push({
-              label: "Sleep",
+              label: "睡眠",
               value: root.fmtHours(s.sleep.total_hr),
-              base: "deep " + root.fmtHours(s.sleep.deep_hr) + (s.sleep.deep_pct != null ? " · " + s.sleep.deep_pct + "%" : ""),
+              base: "深睡 " + root.fmtHours(s.sleep.deep_hr) + (s.sleep.deep_pct != null ? " · " + s.sleep.deep_pct + "%" : ""),
               tint: root.foreground
             })
           if (s.weight)
             rows.push({
-              label: "Weight",
+              label: "体重",
               value: s.weight.kg + " kg",
-              base: (s.weight.avg7 != null ? "7d avg " + s.weight.avg7 + " kg" : "") +
+              base: (s.weight.avg7 != null ? "7 日均 " + s.weight.avg7 + " kg" : "") +
                     (s.weight.day && s.fetched_at && s.weight.day !== s.fetched_at.slice(0, 10) ? " · " + s.weight.day.slice(5) : ""),
               tint: root.foreground
             })
-          // VO2max is an estimate (Uth formula, from resting HR) — Apple only
-          // measures Cardio Fitness during outdoor walk/run, which this account
-          // never logs. Hence the "est" suffix.
-          if (s.vo2max)
-            rows.push({
-              label: "VO2max est",
-              value: s.vo2max.est != null ? s.vo2max.est + " ml/kg" : "—",
-              base: (s.vo2max.avg7 != null ? "7d base " + s.vo2max.avg7 : "") +
-                    (s.vo2max.hrmax_ref != null ? (s.vo2max.avg7 != null ? " · " : "") + "HRmax " + s.vo2max.hrmax_ref : ""),
-              tint: root.foreground
-            })
           rows.push({
-            label: "Exercise",
-            value: s.exercise_min_today + " / " + s.exercise_goal + " min",
-            base: s.kcal_today + " kcal · " + s.steps_today + " steps",
+            label: "锻炼",
+            value: s.exercise_min_today + " / " + s.exercise_goal + " 分钟",
+            base: s.kcal_today + " kcal · " + s.steps_today + " 步",
             tint: root.foreground
           })
           return rows
@@ -315,9 +317,18 @@ Panel {
 
       PanelSectionHeader {
         width: parent.width
-        text: "TRAINING · 7 DAYS"
+        text: "训练 · 近 7 天"
         foreground: root.foreground
         fontFamily: root.fontFamily
+      }
+
+      Text {
+        width: parent.width
+        visible: !(root.snap && root.snap.ok && root.snap.workouts_7d && root.snap.workouts_7d.length)
+        text: "暂无训练记录"
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
       }
 
       Repeater {
@@ -326,11 +337,11 @@ Panel {
           width: parent.width
           spacing: Style.space(8)
           // fixed columns + 4 gaps; name gets whatever is left (elided)
-          readonly property real fixedCells: Style.space(46 + 52 + 66 + 78) + 4 * spacing
+          readonly property real fixedCells: Style.space(46 + 66 + 66 + 78) + 4 * spacing
           Text { width: Style.space(46); text: modelData.day.slice(5); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
           Text { width: parent.width - parent.fixedCells; text: modelData.name; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
-          Text { width: Style.space(52); text: modelData.min + "min"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
-          Text { width: Style.space(66); text: modelData.kcal + "kcal"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+          Text { width: Style.space(66); text: modelData.min + " 分钟"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+          Text { width: Style.space(66); text: modelData.kcal + " kcal"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
           Text { width: Style.space(78); text: Math.round(modelData.avg_hr) + "/" + Math.round(modelData.max_hr); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight; horizontalAlignment: Text.AlignRight }
         }
       }
@@ -339,8 +350,8 @@ Panel {
         width: parent.width
         visible: root.failed || root.updatedLabel !== ""
         text: root.failed
-                ? ("Sync failed: " + root.failMsg + " · retrying…")
-                : (root.loading ? root.updatedLabel + " · syncing…" : root.updatedLabel)
+                ? ("同步失败：" + root.failMsg + " · 重试中…")
+                : (root.loading ? root.updatedLabel + " · 同步中…" : root.updatedLabel)
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
