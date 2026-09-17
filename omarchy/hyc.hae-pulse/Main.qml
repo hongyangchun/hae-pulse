@@ -52,6 +52,25 @@ Panel {
     return hh + "h" + (mm < 10 ? "0" : "") + mm + "m"
   }
 
+  // 大数加千分位：5695 步、585 kcal 不加分隔读不出量级。
+  // 与 macOS 侧 render.py 的 thousands() 同一行为 —— 之前只有 macOS 加分隔，
+  // 同一份数据在两个平台显示的位数格式不同。
+  function thousands(n) {
+    var v = Math.round(Number(n))
+    if (!isFinite(v)) return String(n)
+    return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+  }
+
+  // 值不是当天时返回 " · MM-DD"，是当天（或没日期）返回空串。
+  // **日结型指标必须标日期**：静息心率/睡眠/体重/心肺耐力(估)在源端当天不会有
+  // 当天的点（Apple 当天结束后才定稿日聚合值），所以它们几乎总是昨天的数 ——
+  // 标出来才能避免「昨天的读数被当成今天」。规则与 macOS 侧 render.py 的
+  // day_suffix() 完全一致（那边同样比 day 与 fetched_at[:10]）。
+  function daySuffix(day) {
+    if (!day || !root.snap || !root.snap.fetched_at) return ""
+    return day === root.snap.fetched_at.slice(0, 10) ? "" : " · " + String(day).slice(5)
+  }
+
   function agoText() {
     if (!root.updatedAt) return ""
     var s = Math.max(0, Math.floor((Date.now() - root.updatedAt) / 1000))
@@ -268,38 +287,44 @@ Panel {
           rows.push({
             label: "静息心率",
             value: s.rhr_today != null ? s.rhr_today + " bpm" : "—",
-            base: s.rhr_avg7 != null ? "7 日均 " + s.rhr_avg7 + " bpm" : "",
+            base: (s.rhr_avg7 != null ? "7 日均 " + s.rhr_avg7 + " bpm" : "") + root.daySuffix(s.rhr_day),
             tint: root.foreground
           })
           // 心肺耐力是估算值（Uth 公式，来源是静息心率）：Apple 只在户外步行/跑步时
           // 测 Cardio Fitness，本账号没有这类训练，实测值恒为空。所以标「(估)」。
+          // 它也继承了静息心率的滞后（rhr7 窗口要等静息心率），日期通常也是昨天。
           if (s.vo2max)
             rows.push({
               label: "心肺耐力(估)",
               value: s.vo2max.est != null ? s.vo2max.est + " ml/kg" : "—",
               base: (s.vo2max.avg7 != null ? "7 日均 " + s.vo2max.avg7 : "") +
-                    (s.vo2max.hrmax_ref != null ? (s.vo2max.avg7 != null ? " · " : "") + "HRmax " + s.vo2max.hrmax_ref : ""),
+                    (s.vo2max.hrmax_ref != null ? (s.vo2max.avg7 != null ? " · " : "") + "HRmax " + s.vo2max.hrmax_ref : "") +
+                    root.daySuffix(s.vo2max.day),
               tint: root.foreground
             })
           if (s.sleep)
             rows.push({
               label: "睡眠",
               value: root.fmtHours(s.sleep.total_hr),
-              base: "深睡 " + root.fmtHours(s.sleep.deep_hr) + (s.sleep.deep_pct != null ? " · " + s.sleep.deep_pct + "%" : ""),
+              base: "深睡 " + root.fmtHours(s.sleep.deep_hr) + (s.sleep.deep_pct != null ? " · " + s.sleep.deep_pct + "%" : "") +
+                    root.daySuffix(s.sleep.day),
               tint: root.foreground
             })
           if (s.weight)
             rows.push({
               label: "体重",
               value: s.weight.kg + " kg",
-              base: (s.weight.avg7 != null ? "7 日均 " + s.weight.avg7 + " kg" : "") +
-                    (s.weight.day && s.fetched_at && s.weight.day !== s.fetched_at.slice(0, 10) ? " · " + s.weight.day.slice(5) : ""),
+              base: (s.weight.avg7 != null ? "7 日均 " + s.weight.avg7 + " kg" : "") + root.daySuffix(s.weight.day),
               tint: root.foreground
             })
+          // 锻炼 = 今日已记录的训练时长（来自 workouts，当天就有），不是锻炼环。
+          // 锻炼环（apple_exercise_time）是日结型，当天的值在源端不存在，用它这一行
+          // 会恒为 0。代价：训练时长是锻炼环的子集，不计入非训练的零星活动分钟。
           rows.push({
             label: "锻炼",
             value: s.exercise_min_today + " / " + s.exercise_goal + " 分钟",
-            base: s.kcal_today + " kcal · " + s.steps_today + " 步",
+            base: (s.exercise_sessions_today > 0 ? s.exercise_sessions_today + " 次 · " : "") +
+                  root.thousands(s.kcal_today) + " kcal · " + root.thousands(s.steps_today) + " 步",
             tint: root.foreground
           })
           return rows
@@ -341,7 +366,7 @@ Panel {
           Text { width: Style.space(46); text: modelData.day.slice(5); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
           Text { width: parent.width - parent.fixedCells; text: modelData.name; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
           Text { width: Style.space(66); text: modelData.min + " 分钟"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
-          Text { width: Style.space(66); text: modelData.kcal + " kcal"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+          Text { width: Style.space(66); text: root.thousands(modelData.kcal) + " kcal"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
           Text { width: Style.space(78); text: Math.round(modelData.avg_hr) + "/" + Math.round(modelData.max_hr); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight; horizontalAlignment: Text.AlignRight }
         }
       }

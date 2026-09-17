@@ -9,7 +9,11 @@ panel), which has no macOS equivalent.
 Layout mirrors Main.qml:
   menubar  -> HRV number, tinted by recovery verdict
   dropdown -> sparkline, vitals rows, 7-day training table
-  panel    -> the same data as a styled popout (see panel.template.html)
+
+**只有一个信息面：下拉。** 早期还有一个 `panel.html` 的 webview 弹层，但它和下拉
+的内容是同一份（hero / sparkline / 行 / 训练表全都有），等于同一屏东西看两遍；
+Omarchy 端也没有第二个面（bar 只放数字，弹层放全部）。所以面板整个删掉了 ——
+下拉就是那个弹层，两个平台看到的是一件事。要更长的历史去网页仪表盘。
 """
 
 import base64
@@ -20,7 +24,6 @@ import subprocess
 import sys
 import zlib
 from datetime import datetime, timezone
-from urllib.parse import quote
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 # The data layer is shared with the Omarchy build and lives at the repo root,
@@ -29,8 +32,6 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 COLLECTOR = os.path.normpath(os.path.join(ROOT, os.pardir, "collector.py"))
 CACHE = os.path.join(ROOT, "cache.json")
 ENV_FILE = os.path.join(ROOT, ".env")
-TEMPLATE = os.path.join(ROOT, "panel.template.html")
-PANEL = os.path.join(ROOT, "panel.html")
 
 # Verdict palette. SwiftBar takes "light,dark" pairs; the Omarchy originals
 # (#8FF740 / #d7a55b / theme urgent) are dark-appearance hues, so light mode
@@ -141,6 +142,19 @@ def thousands(n):
         return str(n)
 
 
+def day_suffix(day, fetched_at):
+    """值不是当天时返回 ' · MM-DD'，是当天（或没有日期）就返回空串。
+
+    **日结型指标必须标日期。** 静息心率/睡眠/体重/心肺耐力(估)在源端当天不会有
+    当天的点（Apple 当天结束后才定稿日聚合值），所以它们几乎总是昨天的数 ——
+    标出来是唯一能避免「昨天的读数被当成今天」的办法。值与快照抓取日期比较，
+    与 Omarchy 侧 Main.qml 的写法完全一致（那边同样比 `day` 与 `fetched_at[:10]`）。
+    """
+    if not day or not fetched_at:
+        return ""
+    return "" if day == fetched_at[:10] else " · " + str(day)[5:]
+
+
 def fmt_hours(hours):
     if hours is None:
         return "—"
@@ -237,25 +251,6 @@ def sparkline_png(series, avg, verdict, width=156, height=30):
     return base64.b64encode(png).decode("ascii")
 
 
-# ------------------------------------------------------------ panel output
-
-
-def write_panel(data):
-    """Regenerate panel.html with the snapshot inlined (no fetch in webview)."""
-    if not os.path.exists(TEMPLATE):
-        return None
-    try:
-        with open(TEMPLATE) as fh:
-            tpl = fh.read()
-        payload = json.dumps(data, ensure_ascii=False)
-        html = tpl.replace("/*__HAE_DATA__*/null", payload)
-        with open(PANEL, "w") as fh:
-            fh.write(html)
-    except OSError:
-        return None
-    return PANEL
-
-
 # ------------------------------------------------------------------ render
 
 
@@ -268,11 +263,8 @@ def menu(data):
         out.append("HAE 健康 · 离线 | color=%s font=Menlo size=13" % C_REST)
         out.append(str(data.get("error", "无数据"))[:110] + " | color=%s size=11 font=Menlo" % C_DIM)
         out.append("---")
-        panel = write_panel(data)
-        if panel:
-            out.append("打开面板 | href=file://%s webview=true webvieww=440 webviewh=620 font=Menlo size=12"
-                       % quote(panel))
         out.append("立即刷新 | refresh=true font=Menlo size=12")
+        out.append("打开健康仪表盘 | href=%s font=Menlo size=12" % DASHBOARD)
         return "\n".join(out)
 
     verdict = data.get("verdict", "ready")
@@ -295,12 +287,6 @@ def menu(data):
         sub = "%s%.1f%% 对比 7 日均值" % ("+" if delta >= 0 else "", delta)
     out.append(sub + " | color=%s font=Menlo size=11" % C_DIM)
 
-    stamp = ago_text(data.get("fetched_at"))
-    if data.get("stale"):
-        stamp = "数据陈旧 · %s · %s" % (stamp or "用的是缓存", data.get("stale_error", ""))
-    if stamp:
-        out.append(stamp.strip(" ·") + " | color=%s font=Menlo size=11" % C_DIM)
-
     # HRV 7 日柱状图（PNG 自绘，末柱按 verdict 着色，虚线是 7 日均值）
     png = sparkline_png(data.get("hrv_series"), data.get("hrv_avg7"), verdict)
     if png:
@@ -311,6 +297,11 @@ def menu(data):
     # 行序三端统一（macOS 与 Omarchy 曾经不同）：HRV → 静息心率 → 心肺耐力 → 睡眠 → 体重 → 锻炼。
     # 先收集成列表再统一算列宽 —— 等宽对齐要求所有行的列起点一致，
     # 逐行各自 pad 会让「心肺耐力(估)」这种更宽的标签把整行顶歪。
+    #
+    # 日期规则（三端共用）：**值不是今天的，右列就带一个 ' · MM-DD'**。
+    # 静息心率/睡眠/体重/心肺耐力(估)都是日结型指标，当天的点在源端不存在，
+    # 所以它们几乎总是昨天的数 —— 不标日期就会被读成今天的读数。HRV 与锻炼是
+    # 今天口径，永远不带日期（HRV 取不到今天时走「昨日」文案，那是它自己的写法）。
     rows = []
 
     hrv_base = data.get("hrv_avg7")
@@ -321,38 +312,52 @@ def menu(data):
             "%s ms" % data["hrv_yesterday"] if data.get("hrv_yesterday") is not None else "—")
     rows.append(("HRV 今日", "%s ms" % hrv_today if hrv_today is not None else "—", right, vcolor))
 
+    fetched = data.get("fetched_at")
+
     rhr_today, rhr_base = data.get("rhr_today"), data.get("rhr_avg7")
+    rhr_right = "7 日均 %s bpm" % rhr_base if rhr_base is not None else ""
     rows.append(("静息心率", "%s bpm" % rhr_today if rhr_today is not None else "—",
-                 "7 日均 %s bpm" % rhr_base if rhr_base is not None else "", C_FG))
+                 rhr_right + day_suffix(data.get("rhr_day"), fetched), C_FG))
 
     # 心肺耐力估算值。放下拉而不是菜单栏：按 Uth 公式它是静息心率的单调变换，
     # 与上一行高度共线，占菜单栏不划算；但作为「心脏能力」的绝对量级看趋势有意义。
     # 标「(估)」以区别于 Apple 的实测值（本账号无户外步行/跑步，实测值恒为空）。
+    # 它也继承了静息心率的滞后（rhr7 窗口要等静息心率），所以日期通常也是昨天。
     vo = data.get("vo2max")
     if vo:
         right = "7 日均 %s" % vo["avg7"] if vo.get("avg7") is not None else ""
         if vo.get("hrmax_ref") is not None:
             right = (right + " · " if right else "") + "HRmax %s" % vo["hrmax_ref"]
         rows.append(("心肺耐力(估)", "%s ml/kg" % vo["est"] if vo.get("est") is not None else "—",
-                     right, C_FG))
+                     right + day_suffix(vo.get("day"), fetched), C_FG))
 
     sleep = data.get("sleep")
     if sleep:
         deep = "深睡 %s" % fmt_hours(sleep.get("deep_hr"))
         if sleep.get("deep_pct") is not None:
             deep += " · %d%%" % sleep["deep_pct"]
-        rows.append(("睡眠", fmt_hours(sleep.get("total_hr")), deep, C_FG))
+        # 睡眠点的日期 = 醒来那天早晨，所以「昨晚」的点日期是今天；哪天标出了
+        # 日期，就说明看到的是更早那一晚。
+        rows.append(("睡眠", fmt_hours(sleep.get("total_hr")),
+                     deep + day_suffix(sleep.get("day"), fetched), C_FG))
 
     weight = data.get("weight")
     if weight:
+        wt_right = "7 日均 %s kg" % weight["avg7"] if weight.get("avg7") is not None else ""
         rows.append(("体重", "%s kg" % weight["kg"],
-                     "7 日均 %s kg" % weight["avg7"] if weight.get("avg7") is not None else "", C_FG))
+                     wt_right + day_suffix(weight.get("day"), fetched), C_FG))
 
+    # 锻炼 = **今日已记录的训练时长**（来自 workouts，当天就有），不是锻炼环。
+    # 锻炼环（apple_exercise_time）是日结型，当天的值在源端不存在，用它这一行会
+    # 恒为 0。代价：训练时长是锻炼环的子集，不计入非训练的零星活动分钟。
+    sessions = data.get("exercise_sessions_today") or 0
+    ex_right = "%s kcal · %s 步" % (thousands(data.get("kcal_today", 0)),
+                                    thousands(data.get("steps_today", 0)))
+    if sessions:
+        ex_right = "%d 次 · %s" % (sessions, ex_right)
     rows.append(("锻炼",
                  "%s / %s 分钟" % (data.get("exercise_min_today", 0), data.get("exercise_goal", 30)),
-                 "%s kcal · %s 步" % (thousands(data.get("kcal_today", 0)),
-                                      thousands(data.get("steps_today", 0))),
-                 C_FG))
+                 ex_right, C_FG))
 
     out.append("---")
     # 列宽 = max(下限, 最长内容 + 2) —— +2 保证两列之间至少有 2 格，不会粘连
@@ -378,12 +383,18 @@ def menu(data):
         out.append("%s %s%s | color=%s font=Menlo size=11" % (
             day, pad(str(row.get("name", "—")), wname), detail, C_FG))
 
+    # ---- 页脚：新鲜度 ----
+    # 放在内容之后、动作之前，与 Omarchy 弹层的底部状态行同一位置。
+    stamp = ago_text(data.get("fetched_at"))
+    if data.get("stale"):
+        stamp = "数据陈旧 · %s · %s" % (stamp or "用的是缓存", data.get("stale_error", ""))
+    if stamp:
+        out.append("---")
+        out.append(stamp.strip(" ·") + " | color=%s font=Menlo size=11" % C_DIM)
+
     # ---- 动作 ----
-    panel = write_panel(data)
+    # 没有第二个信息面：下拉本身就是那个弹层。要更长的历史去网页仪表盘。
     out.append("---")
-    if panel:
-        out.append("打开面板 | href=file://%s webview=true webvieww=440 webviewh=620 font=Menlo size=12"
-                   % quote(panel))
     out.append("立即刷新 | refresh=true font=Menlo size=12")
     out.append("打开健康仪表盘 | href=%s font=Menlo size=12" % DASHBOARD)
 

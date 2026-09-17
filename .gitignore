@@ -1,6 +1,4 @@
 # macOS 侧运行时生成物
-macos/panel.html
-macos/panel-live.html
 macos/cache.json
 
 # 凭证 —— 绝不提交

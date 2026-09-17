@@ -5,15 +5,20 @@ Output: single JSON line on stdout
 {
   "ok": true,
   "hrv_today": 36.7, "hrv_avg7": 34.1, "hrv_delta_pct": 7.6,
-  "rhr_today": 55,   "rhr_avg7": 59.3,
+  "rhr_today": 55,   "rhr_avg7": 59.3, "rhr_day": "2026-09-16",
   "vo2max": {"day": "2026-09-16", "est": 47.5, "rhr7": 55.6, "avg7": 47.3, "hrmax_ref": 176},
-  "exercise_min_today": 4, "exercise_goal": 30,
+  "exercise_min_today": 4, "exercise_sessions_today": 1, "exercise_goal": 30,
   "steps_today": 3573,
   "kcal_today": 295.9,
   "workouts_7d": [{"day":"2026-09-05","name":"传统力量训练","min":74,"kcal":428,"avg_hr":110,"max_hr":154}, ...],
   "fetched_at": "2026-09-11T21:40:00+08:00"
 }
 On any failure: {"ok": false, "error": "..."} (exit 0 — the widget reads JSON).
+
+**指标分两类，取值口径必须区别对待**（详见 latest() 的注释）：
+实时型（当天就有）可以直接取今天；**日结型（静息心率/睡眠/体重/锻炼环）当天的点
+在源端不存在**，只能取「最近一个可用值」，并把它的日期一起返回（`rhr_day`、
+`sleep.day`、`weight.day`），界面负责标注。只取今天会让这些指标恒为空。
 
 Read-only. Key comes from ~/.hermes/.env (HAE_READ_KEY). Never writes to HAE.
 """
@@ -69,11 +74,35 @@ def mean(vals):
     return sum(vals) / len(vals) if vals else None
 
 
+def latest(hist: dict):
+    """最后一个非空值 → (日期, 值)；空则 (None, None)。
+
+    **必须能往前找，不能只取今天。** 指标分成两类（实测 2026-09-17 用
+    `/api/metrics` 的 first_day/last_day 分组）：
+
+      实时型 —— 当天就有：heart_rate、heart_rate_variability、step_count、
+                active_energy、blood_oxygen_saturation …
+      日结型 —— 要等次日：resting_heart_rate、sleep_analysis、weight_body_mass、
+                apple_exercise_time、walking_speed …
+
+    日结型指标的「今天」在源端结构性不存在（Apple 在当天结束后才定稿日聚合值），
+    `hist.get(str(TODAY))` 会恒定拿到 None。仪表盘一直显示正常，正是因为它的
+    `stat()` 取「最后一个非空值」；插件曾经只取今天，于是静息心率恒为 `—`、
+    锻炼恒为 0。取到哪一天要一起返回，界面必须把日期标出来 —— 否则昨天的数
+    看着像今天的。
+    """
+    for d in sorted(hist, reverse=True):
+        if hist[d] is not None:
+            return d, hist[d]
+    return None, None
+
+
 def main():
     out = {"ok": False}
 
     # --- daily scalar series -------------------------------------------------
-    ex = series("apple_exercise_time", str(WEEK_AGO), str(TODAY))
+    # apple_exercise_time 不再取：它是日结型，当天的值拿不到，用它做「今日锻炼」
+    # 会恒为 0。今日训练时长改由 workouts 现算（见下方 workouts 段）。
     hrv = series("heart_rate_variability", str(TREND_START), str(TODAY))
     rhr = series("resting_heart_rate", str(TREND_START), str(TODAY))
     steps = series("step_count", str(WEEK_AGO), str(TODAY))
@@ -83,8 +112,12 @@ def main():
     hrv_today = hrv.get(t)
     hrv_yesterday = next((v for d, v in sorted(hrv.items(), reverse=True) if d < t), None)
     hrv_base = mean([v for d, v in hrv.items() if d < t][-7:])   # prior 7 days
-    rhr_today = rhr.get(t)
-    rhr_base = mean([v for d, v in rhr.items() if d < t][-7:])
+
+    # 静息心率是日结型：当天通常还没有，取最近一天并把日期一起带出去。
+    # 基准取 rhr_day 之**前**的 7 天（不含当前值），与仪表盘 stat() 的
+    # `mean(vs.slice(-8,-1))` 同一口径 —— 两处实现、一处定义。
+    rhr_day, rhr_today = latest(rhr)
+    rhr_base = mean([v for d, v in sorted(rhr.items()) if rhr_day and d < rhr_day][-7:])
 
     out.update({
         "hrv_today": round(hrv_today, 1) if hrv_today is not None else None,
@@ -95,8 +128,8 @@ def main():
         "hrv_series": [{"day": d, "value": round(v, 1)}
                        for d, v in sorted(hrv.items()) if d >= str(WEEK_AGO)],
         "rhr_today": round(rhr_today) if rhr_today is not None else None,
+        "rhr_day": rhr_day,
         "rhr_avg7": round(rhr_base, 1) if rhr_base else None,
-        "exercise_min_today": round(ex.get(t, 0)),
         "exercise_goal": 30,
         "steps_today": round(steps.get(t, 0)),
         "kcal_today": round(kcal.get(t, 0), 1),
@@ -174,6 +207,15 @@ def main():
         })
     rows.sort(key=lambda r: r["day"], reverse=True)
     out["workouts_7d"] = rows
+
+    # 今日训练时长 = 今天已记录的训练时长之和。
+    # 为什么不用 apple_exercise_time（锻炼环）：它是日结型指标，当天的值在源端
+    # 不存在，`ex.get(t, 0)` 会恒为 0，而 workouts 当天就有记录 —— 只有它能让
+    # 「N / 30 分钟」这一行在当天真正动起来。代价是训练时长是锻炼环的子集，
+    # 不计入非训练的零星活动分钟，所以它标的是「训练」而不是「活动」。
+    today_rows = [r for r in rows if r["day"] == t]
+    out["exercise_min_today"] = round(sum(r["min"] for r in today_rows))
+    out["exercise_sessions_today"] = len(today_rows)
 
     # --- recovery verdict -----------------------------------------------------
     # ready  = HRV at/above baseline          -> green-ish, go train

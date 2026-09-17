@@ -2,7 +2,7 @@
 
 A health-recovery bar widget plugin for [Omarchy](https://omarchy.org): today's
 HRV vs your 7-day baseline, a recovery verdict color dot, and a click-to-open
-panel with resting HR, exercise ring, and a 7-day training log.
+panel with resting HR, today's training minutes, and a 7-day training log.
 
 Read-only feed from the [Health Auto Export](https://healthyapis.com) (HAE)
 cloud API. The plugin never writes anything back.
@@ -13,8 +13,10 @@ share the single `collector.py` at the repo root.
 
 ## Bar widget
 
-- HRV number tinted by recovery verdict: **ready** (green, at/above
-  baseline), **ease off** (amber, watch), **recovery** (theme urgent, rest)
+- HRV number tinted by recovery verdict. The verdict values stay English
+  (`ready` / `watch` / `rest` — they are data identifiers), but the UI copy is
+  Chinese: **可以练** (green, at/above baseline), **悠着点** (amber, watch),
+  **该休息** (theme urgent, rest)
 - Verdict is computed by comparing today's HRV against the previous 7-day
   baseline
 - Left click opens the panel; right click forces an immediate refresh
@@ -25,13 +27,23 @@ share the single `collector.py` at the repo root.
 
 ## Panel
 
+Row order is shared with the macOS dropdown and the web dashboard:
+`HRV → 静息心率 → 心肺耐力(估) → 睡眠 → 体重 → 锻炼`.
+
 - HRV 7-day trend sparkline (today's bar verdict-colored, dashed baseline)
-- HRV / resting HR today vs 7-day baseline (falls back to yesterday's HRV
+- HRV today / resting HR vs 7-day baseline (falls back to yesterday's HRV
   until today's value syncs)
+- **Day-finalized metrics are dated.** Resting HR, sleep, weight and the VO2max
+  estimate are only finalized by Apple after the day ends, so *today's* point
+  does not exist at the source — the panel shows the latest available value and
+  appends its date (` · 09-16`). Without the date, yesterday's reading would be
+  mistaken for today's.
 - Sleep (total + deep) and weight (vs 7-day average)
-- Exercise minutes, calories, steps
+- Today's training minutes / goal, plus session count, calories and steps.
+  Sourced from `/api/workouts`, **not** Apple's exercise ring — the ring is
+  day-finalized too and reads 0 for the whole current day.
 - 7-day workout table (name, duration, kcal, avg/max HR)
-- Footer shows data freshness ("updated 5m ago")
+- Footer shows data freshness ("X 分钟前更新")
 
 ## Requirements
 
