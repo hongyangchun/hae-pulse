@@ -62,9 +62,9 @@ Panel {
   }
 
   // 值不是当天时返回 " · MM-DD"，是当天（或没日期）返回空串。
-  // **日结型指标必须标日期**：静息心率/睡眠/体重/心肺耐力(估)在源端当天不会有
-  // 当天的点（Apple 当天结束后才定稿日聚合值），所以它们几乎总是昨天的数 ——
-  // 标出来才能避免「昨天的读数被当成今天」。规则与 macOS 侧 render.py 的
+  // **日结型指标要标日期**：静息心率/睡眠/体重/心肺耐力(估)由整夜数据算出，
+  // Apple 清晨才定稿 —— 清晨前最新点是昨天的，清晨后当天的点就出现了，两种都会
+  // 遇到，所以只能按日期比，不能写死成「永远标」。规则与 macOS 侧 render.py 的
   // day_suffix() 完全一致（那边同样比 day 与 fetched_at[:10]）。
   function daySuffix(day) {
     if (!day || !root.snap || !root.snap.fetched_at) return ""
@@ -159,20 +159,33 @@ Panel {
       if (!root.snap || !root.snap.ok) return "HAE 健康 · " + (root.failMsg || "无数据")
       var s = root.snap
       var lines = []
+      // 悬停提示是第 4 个文案面（栏图标 / tooltip / popout / macOS 下拉）。
+      // 行序、口径、日期规则必须与 popout 完全一致，否则同一份数据会有两种读法：
+      //   HRV → 静息心率 → 心肺耐力(估) → 睡眠 → 体重 → 锻炼
+      // 提示行只放一行一条，所以不带 popout 的三列对齐；但日结型指标的日期后缀
+      // 和千分位一个都不能少 —— 那两条是正确性规则，不是排版偏好。
       if (s.hrv_today != null)
         lines.push("HRV " + s.hrv_today + " ms (" + (s.hrv_delta_pct >= 0 ? "+" : "") + s.hrv_delta_pct + "% 对比基准) · " + root.verdictLabel)
       else
         lines.push("HRV 待同步 · 昨日 " + (s.hrv_yesterday != null ? s.hrv_yesterday + " ms" : "—"))
-      lines.push("锻炼 " + s.exercise_min_today + "/" + s.exercise_goal + " 分钟 · " + s.kcal_today + " kcal · " + s.steps_today + " 步")
-      if (s.sleep)
-        lines.push("睡眠 " + root.fmtHours(s.sleep.total_hr) + " · 深睡 " + (s.sleep.deep_pct != null ? s.sleep.deep_pct + "%" : root.fmtHours(s.sleep.deep_hr)))
-      if (s.weight)
-        lines.push("体重 " + s.weight.kg + " kg" + (s.weight.avg7 != null ? " · 7 日均 " + s.weight.avg7 + " kg" : ""))
+      lines.push("静息心率 " + (s.rhr_today != null ? s.rhr_today + " bpm" : "—") +
+                 (s.rhr_avg7 != null ? " · 7 日均 " + s.rhr_avg7 + " bpm" : "") + root.daySuffix(s.rhr_day))
       if (s.vo2max)
-        lines.push("心肺耐力(估) " + s.vo2max.est + " ml/kg" + (s.vo2max.avg7 != null ? " · 7 日均 " + s.vo2max.avg7 : ""))
+        lines.push("心肺耐力(估) " + s.vo2max.est + " ml/kg" +
+                   (s.vo2max.avg7 != null ? " · 7 日均 " + s.vo2max.avg7 : "") + root.daySuffix(s.vo2max.day))
+      if (s.sleep)
+        lines.push("睡眠 " + root.fmtHours(s.sleep.total_hr) + " · 深睡 " +
+                   (s.sleep.deep_pct != null ? s.sleep.deep_pct + "%" : root.fmtHours(s.sleep.deep_hr)) +
+                   root.daySuffix(s.sleep.day))
+      if (s.weight)
+        lines.push("体重 " + s.weight.kg + " kg" +
+                   (s.weight.avg7 != null ? " · 7 日均 " + s.weight.avg7 + " kg" : "") + root.daySuffix(s.weight.day))
+      lines.push("锻炼 " + s.exercise_min_today + "/" + s.exercise_goal + " 分钟" +
+                 (s.exercise_sessions_today > 0 ? " · " + s.exercise_sessions_today + " 次" : "") +
+                 " · " + root.thousands(s.kcal_today) + " kcal · " + root.thousands(s.steps_today) + " 步")
       if (s.workouts_7d && s.workouts_7d.length) {
         var w = s.workouts_7d[0]
-        lines.push("最近：" + w.day.slice(5) + " " + w.name + " " + w.min + " 分钟 " + w.kcal + " kcal")
+        lines.push("最近：" + w.day.slice(5) + " " + w.name + " " + w.min + " 分钟 " + root.thousands(w.kcal) + " kcal")
       }
       return lines.join("\n")
     }
@@ -318,7 +331,7 @@ Panel {
               tint: root.foreground
             })
           // 锻炼 = 今日已记录的训练时长（来自 workouts，当天就有），不是锻炼环。
-          // 锻炼环（apple_exercise_time）是日结型，当天的值在源端不存在，用它这一行
+          // 锻炼环（apple_exercise_time）是日结型，清晨前当天的值拿不到，用它这一行
           // 会恒为 0。代价：训练时长是锻炼环的子集，不计入非训练的零星活动分钟。
           rows.push({
             label: "锻炼",

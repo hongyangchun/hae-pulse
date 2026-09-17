@@ -20,8 +20,10 @@ share the single `collector.py` at the repo root.
 - Verdict is computed by comparing today's HRV against the previous 7-day
   baseline
 - Left click opens the panel; right click forces an immediate refresh
-- Tooltip shows HRV delta, exercise minutes, calories, steps, sleep, weight,
-  and the last workout
+- Tooltip carries the same six metrics in the same order as the panel
+  (`HRV → 静息心率 → 心肺耐力(估) → 睡眠 → 体重 → 锻炼`), one line each, plus the
+  last workout. Date suffixes and thousands separators are applied here too —
+  those are correctness rules, not panel-only decoration
 - Data refreshes every 10 minutes; the collector is a short-lived process, so
   there is no resident background load
 
@@ -33,15 +35,16 @@ Row order is shared with the macOS dropdown and the web dashboard:
 - HRV 7-day trend sparkline (today's bar verdict-colored, dashed baseline)
 - HRV today / resting HR vs 7-day baseline (falls back to yesterday's HRV
   until today's value syncs)
-- **Day-finalized metrics are dated.** Resting HR, sleep, weight and the VO2max
-  estimate are only finalized by Apple after the day ends, so *today's* point
-  does not exist at the source — the panel shows the latest available value and
-  appends its date (` · 09-16`). Without the date, yesterday's reading would be
-  mistaken for today's.
+- **Day-finalized metrics are dated when they are not today's.** Resting HR,
+  sleep, weight and the VO2max estimate are computed from a whole night's data,
+  so Apple only finalizes the day's point in the **morning**. Before that the
+  latest point is still yesterday's and the panel appends its date (` · 09-16`);
+  once the same-day point lands, no date is shown. Without the suffix,
+  yesterday's reading would be mistaken for today's.
 - Sleep (total + deep) and weight (vs 7-day average)
 - Today's training minutes / goal, plus session count, calories and steps.
   Sourced from `/api/workouts`, **not** Apple's exercise ring — the ring is
-  day-finalized too and reads 0 for the whole current day.
+  day-finalized too and reads 0 until the morning finalization.
 - 7-day workout table (name, duration, kcal, avg/max HR)
 - Footer shows data freshness ("X 分钟前更新")
 
