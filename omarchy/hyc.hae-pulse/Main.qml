@@ -179,7 +179,9 @@ Panel {
                    root.daySuffix(s.sleep.day))
       if (s.weight)
         lines.push("体重 " + s.weight.kg + " kg" +
-                   (s.weight.avg7 != null ? " · 7 日均 " + s.weight.avg7 + " kg" : "") + root.daySuffix(s.weight.day))
+                   (s.weight.avg7 != null ? " · 7 日均 " + s.weight.avg7 + " kg" : "") +
+                   (s.weight.bf != null ? " · 体脂 " + s.weight.bf + "%（真实约 " + s.weight.bf_est + "%）" : "") +
+                   root.daySuffix(s.weight.day))
       lines.push("锻炼 " + s.exercise_min_today + "/" + s.exercise_goal + " 分钟" +
                  (s.exercise_sessions_today > 0 ? " · " + s.exercise_sessions_today + " 次" : "") +
                  " · " + root.thousands(s.kcal_today) + " kcal · " + root.thousands(s.steps_today) + " 步")
@@ -323,13 +325,17 @@ Panel {
                     root.daySuffix(s.sleep.day),
               tint: root.foreground
             })
-          if (s.weight)
+          if (s.weight) {
+            var base7 = (s.weight.avg7 != null ? "7 日均 " + s.weight.avg7 + " kg" : "")
+            if (s.weight.bf != null)
+              base7 += " · 体脂 " + s.weight.bf + "%"
             rows.push({
               label: "体重",
               value: s.weight.kg + " kg",
-              base: (s.weight.avg7 != null ? "7 日均 " + s.weight.avg7 + " kg" : "") + root.daySuffix(s.weight.day),
+              base: base7 + root.daySuffix(s.weight.day),
               tint: root.foreground
             })
+          }
           // 锻炼 = 今日已记录的训练时长（来自 workouts，当天就有），不是锻炼环。
           // 锻炼环（apple_exercise_time）是日结型，清晨前当天的值拿不到，用它这一行
           // 会恒为 0。代价：训练时长是锻炼环的子集，不计入非训练的零星活动分钟。

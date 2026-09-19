@@ -347,6 +347,11 @@ def menu(data):
     weight = data.get("weight")
     if weight:
         wt_right = "7 日均 %s kg" % weight["avg7"] if weight.get("avg7") is not None else ""
+        if weight.get("bf") is not None:
+            bf_txt = " 体脂 %s%%" % weight["bf"]
+            if weight.get("bf_est") is not None:
+                bf_txt += "（真实约 %s%%）" % weight["bf_est"]
+            wt_right += " ·" + bf_txt
         rows.append(("体重", "%s kg" % weight["kg"],
                      wt_right + day_suffix(weight.get("day"), fetched), C_FG))
 

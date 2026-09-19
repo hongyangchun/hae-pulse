@@ -175,6 +175,17 @@ def main():
     except Exception:
         pass
 
+    # --- body fat percentage（华为秤 BIA，系统性高估约 5 点）---
+    try:
+        bf = series("body_fat_percentage", str(TREND_START), str(TODAY))
+        if bf and "weight" in out:
+            bd, bv = sorted(bf.items())[-1]
+            out["weight"]["bf"] = round(bv, 1)
+            out["weight"]["bf_est"] = round(bv - 5.5, 1)
+            out["weight"]["bf_day"] = bd
+    except Exception:
+        pass
+
     # --- VO2max estimate ------------------------------------------------------
     # Apple Watch only estimates Cardio Fitness during outdoor walk/run with GPS,
     # so vo2_max is permanently empty for this account (verified: zero rows in
