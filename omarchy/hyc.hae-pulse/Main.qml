@@ -83,7 +83,7 @@ Panel {
   function refresh() {
     if (loading) return
     loading = true
-    proc.command = [pluginDir + "/collector.py"]
+    proc.command = ["python3", pluginDir + "/collector.py"]
     proc.running = true
   }
 
