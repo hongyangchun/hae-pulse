@@ -55,7 +55,8 @@ Row order is shared with the macOS dropdown and the web dashboard:
   `py_compile` does *not* catch it, because annotations are evaluated when the
   function is defined.
 - A Health Auto Export cloud API key with **read** access, provided via the
-  `HAE_READ_KEY` environment variable or `~/.hermes/.env`:
+  `HAE_READ_KEY` environment variable, `~/.hermes/.env`, or
+  `~/.config/fleet-watch.env` (first match wins):
 
   ```
   HAE_READ_KEY=your-key-here

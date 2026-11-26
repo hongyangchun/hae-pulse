@@ -37,6 +37,7 @@ from datetime import date, datetime, timedelta, timezone
 BASE = "https://hae.qiaclass.com"
 UA = "hae-pulse/0.1"
 ENV_PATH = os.path.expanduser("~/.hermes/.env")
+ENV_PATH_FALLBACK = os.path.expanduser("~/.config/fleet-watch.env")
 
 TODAY = date.today()
 WEEK_AGO = TODAY - timedelta(days=6)          # 7-day window incl. today
@@ -48,6 +49,11 @@ def load_key() -> str:
         return os.environ["HAE_READ_KEY"].strip()
     if os.path.exists(ENV_PATH):
         for line in open(ENV_PATH):
+            line = line.strip()
+            if line.startswith("HAE_READ_KEY") and "=" in line:
+                return line.split("=", 1)[1].strip()
+    if os.path.exists(ENV_PATH_FALLBACK):
+        for line in open(ENV_PATH_FALLBACK):
             line = line.strip()
             if line.startswith("HAE_READ_KEY") and "=" in line:
                 return line.split("=", 1)[1].strip()
